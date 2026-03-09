@@ -11,7 +11,7 @@ Mi-FreeForm is an APP that is activated through Shizuku/Sui and can display most
 - Make the APP that sends notifications open in freeform mode
 
 ## Download
-[Release]((https://github.com/Agus-style/Mi-FreeFormn/actions/runs/22878710863/artifacts/5839899973))
+[Release](https://github.com/Agus-style/Mi-FreeForm/releases/)
 
 ## Library
 [AppIconLoader](https://github.com/zhanghai/AppIconLoader)
