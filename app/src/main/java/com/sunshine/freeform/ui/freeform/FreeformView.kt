@@ -543,10 +543,7 @@ class FreeformView(
         initTextureViewListener()
 
         windowLayoutParams.apply {
-            type = if (Settings.canDrawOverlays(context))
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -575,10 +572,7 @@ class FreeformView(
         backgroundViewLayoutParams.apply {
             dimAmount = config.dimAmount
             format = PixelFormat.RGBA_8888
-            type = if (Settings.canDrawOverlays(context))
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             width = WindowManager.LayoutParams.MATCH_PARENT
             height = WindowManager.LayoutParams.MATCH_PARENT
             flags = windowLayoutParams.flags or
@@ -591,17 +585,31 @@ class FreeformView(
             windowManager.addView(backgroundView, backgroundViewLayoutParams)
             windowManager.addView(binding.root, windowLayoutParams)
         }.onFailure {
-            destroy()
             runCatching {
-                Toast.makeText(context, context.getString(R.string.request_overlay_permission), Toast.LENGTH_LONG).show()
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:${context.packageName}")
-                )
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            }.onFailure {
-                Toast.makeText(context, context.getString(R.string.request_overlay_permission_fail), Toast.LENGTH_LONG).show()
+                windowManager.removeViewImmediate(backgroundView)
+                windowManager.removeViewImmediate(binding.root)
+            }
+
+            if (Settings.canDrawOverlays(context)) {
+                windowManager.addView(backgroundView, backgroundViewLayoutParams.apply {
+                    type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                })
+                windowManager.addView(binding.root, windowLayoutParams.apply {
+                    type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                })
+            } else {
+                destroy()
+                runCatching {
+                    Toast.makeText(context, context.getString(R.string.request_overlay_permission), Toast.LENGTH_LONG).show()
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }.onFailure {
+                    Toast.makeText(context, context.getString(R.string.request_overlay_permission_fail), Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -1371,6 +1379,8 @@ class FreeformView(
         isDestroy = true
         isHidden = false
         isFloating = false
+        pendingTaskDisplayJob?.cancel()
+        pendingTaskDisplayJob = null
 
         runCatching {
             windowManager.removeViewImmediate(binding.root)
@@ -1466,49 +1476,68 @@ class FreeformView(
         }
     }
 
+    // Anti-spam untuk onTaskDisplayChanged
+    private val TASK_DISPLAY_DEBOUNCE_MS = 1500L
+    private var pendingTaskDisplayJob: kotlinx.coroutines.Job? = null
+
     @RequiresApi(Build.VERSION_CODES.Q)
     private inner class MTaskStackListener : TaskStackListener() {
         override fun onTaskCreated(tId: Int, componentName: ComponentName?) {
-            if (config.intent !is Intent) return
-            if (componentName?.packageName == config.componentName?.packageName) {
-                taskList.add(tId)
-            }
+            // Tidak track di sini — onTaskDisplayChanged yang handle
+            // saat task benar-benar masuk ke virtual display kita
         }
 
         override fun onTaskRemoved(taskId: Int) {
+            if (isDestroy) return
             taskList.remove(taskId)
         }
 
         override fun onTaskRemovalStarted(taskInfo: ActivityManager.RunningTaskInfo) {
+            if (isDestroy) return
             if (taskList.contains(taskInfo.taskId)) {
                 scope.launch(Dispatchers.Main) { destroy() }
             }
         }
 
         override fun onTaskDisplayChanged(tId: Int, newDisplayId: Int) {
-            // Abaikan jika window sudah destroyed
             if (isDestroy) return
 
-            if (taskList.contains(tId) && isFloating && newDisplayId == Display.DEFAULT_DISPLAY) {
-                // Guard: jangan startService kalau sudah ada intent yang sama berjalan
-                if (config.intent == null) return
-                context.startService(Intent(context, FreeformService::class.java).setAction(FreeformService.ACTION_START_INTENT).putExtra(Intent.EXTRA_INTENT, config.intent))
+            // Task masuk ke virtual display kita → track
+            if (newDisplayId == virtualDisplay.display.displayId) {
+                if (!taskList.contains(tId)) taskList.add(tId)
                 return
             }
-            if (!taskList.contains(tId) && newDisplayId == virtualDisplay.display.displayId) taskList.add(tId)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Guard: hanya proses task milik virtual display ini, bukan task milik window lain
-                if (!isDestroy && taskList.contains(tId) && newDisplayId == Display.DEFAULT_DISPLAY) {
-                    if (config.useSuiRefuseToFullScreen)
-                        activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
-                    else
+            // Task bukan milik kita → abaikan
+            if (!taskList.contains(tId)) return
+
+            // Task milik kita pindah ke DEFAULT_DISPLAY
+            if (newDisplayId == Display.DEFAULT_DISPLAY) {
+                // Pakai coroutine debounce — batalkan job sebelumnya
+                // Ini cegah spam saat Discord/app spawn banyak task sekaligus saat call/notif
+                pendingTaskDisplayJob?.cancel()
+                pendingTaskDisplayJob = scope.launch(Dispatchers.Main) {
+                    kotlinx.coroutines.delay(TASK_DISPLAY_DEBOUNCE_MS)
+                    if (isDestroy) return@launch
+                    if (isFloating) {
+                        if (config.intent == null) return@launch
                         context.startService(
                             Intent(context, FreeformService::class.java)
-                                .setAction(FreeformService.ACTION_CALL_INTENT)
+                                .setAction(FreeformService.ACTION_START_INTENT)
                                 .putExtra(Intent.EXTRA_INTENT, config.intent)
-                                .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
                         )
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (config.useSuiRefuseToFullScreen) {
+                            activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
+                        } else {
+                            context.startService(
+                                Intent(context, FreeformService::class.java)
+                                    .setAction(FreeformService.ACTION_CALL_INTENT)
+                                    .putExtra(Intent.EXTRA_INTENT, config.intent)
+                                    .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
+                            )
+                        }
+                    }
                 }
             }
         }
