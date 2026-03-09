@@ -21,6 +21,7 @@ import com.sunshine.freeform.utils.ServiceUtils.activityManager
 import dev.rikka.tools.refine.Refine
 
 class FreeformService: Service(), ScreenListener.ScreenStateListener {
+    private val mFreeformViews = ArrayList<FreeformView>()
     private lateinit var mFreeformView: FreeformView
     private lateinit var mScreenListener: ScreenListener
     private var mConfig = FreeformConfig()
@@ -41,16 +42,14 @@ class FreeformService: Service(), ScreenListener.ScreenStateListener {
             mConfig.userId = field
         }
 
-    private val mVirtualDisplay by lazy {
-        ServiceUtils.displayManager.createVirtualDisplay(
-            "MiFreeform@${SystemClock.uptimeMillis()}",
-            500,
-            500,
-            100,
-            null,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
-        )
-    }
+    private fun createVirtualDisplay() = ServiceUtils.displayManager.createVirtualDisplay(
+        "MiFreeform@${SystemClock.uptimeMillis()}",
+        500,
+        500,
+        100,
+        null,
+        DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
+    )
 
     private val mRunningTasks: List<ActivityManager.RunningTaskInfo>
         get() = activityManager.getTasks(100)
@@ -65,23 +64,10 @@ class FreeformService: Service(), ScreenListener.ScreenStateListener {
             return null
         }
 
-    private val mFreeformRunningTasks: ArrayList<ActivityManager.RunningTaskInfo>
-        get() {
-            val runningTaskInfo = ArrayList<ActivityManager.RunningTaskInfo>()
-            mRunningTasks.forEach {
-                if (Refine.unsafeCast<TaskInfoHidden>(it).displayId == mVirtualDisplay.display.displayId) {
-                    runningTaskInfo.add(it)
-                }
-            }
-            return runningTaskInfo
-        }
-
     override fun onCreate() {
         ServiceUtils.initWithShizuku(this)
-
         mScreenListener = ScreenListener(this)
         mScreenListener.addScreenStateListener(this)
-
         initFreeformView()
     }
 
@@ -90,9 +76,8 @@ class FreeformService: Service(), ScreenListener.ScreenStateListener {
             return START_NOT_STICKY
         when (intent.action) {
             ACTION_START_INTENT -> {
-                if (mFreeformView.isDestroy) {
-                    initFreeformView()
-                }
+                // Selalu buat window baru untuk unlimited window
+                initFreeformView()
                 mUserId = intent.getIntExtra(Intent.EXTRA_USER, 0)
                 mIntent = intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 mComponentName = intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME)
@@ -107,9 +92,134 @@ class FreeformService: Service(), ScreenListener.ScreenStateListener {
                     return START_NOT_STICKY
                 if (startIntent(
                         parcelable = intent.getParcelableExtra(Intent.EXTRA_INTENT),
-                        displayId = intent.getIntExtra(EXTRA_DISPLAY_ID, mVirtualDisplay.display.displayId)
+                        displayId = intent.getIntExtra(EXTRA_DISPLAY_ID, mFreeformView.virtualDisplay?.display?.displayId ?: Display.DEFAULT_DISPLAY)
                     ) < 0) {
                     return START_NOT_STICKY
+                }
+            }
+            ACTION_DESTROY_FREEFORM -> {
+                mFreeformView.destroy()
+                mFreeformViews.remove(mFreeformView)
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+
+    override fun onDestroy() {
+        // Destroy semua window
+        mFreeformViews.forEach { it.destroy() }
+        mFreeformViews.clear()
+        mScreenListener.unregisterListener()
+    }
+
+    private fun initFreeformView() {
+        val virtualDisplay = createVirtualDisplay()
+        mFreeformView = FreeformView(FreeformConfig(), this, virtualDisplay, mScreenListener)
+        mFreeformView.initSystemService()
+        mFreeformView.initConfig()
+        mFreeformView.initView()
+        mFreeformViews.add(mFreeformView)
+    }
+
+    private fun startFreeformView() {
+        if (mFreeformView.isFloating || mFreeformView.isHidden) {
+            mFreeformView.moveToFirst()
+        } else {
+            mFreeformView.showWindow()
+        }
+    }
+
+    private fun startIntent(
+        parcelable: Parcelable? = mIntent,
+        displayId: Int = mFreeformView.virtualDisplay?.display?.displayId ?: Display.DEFAULT_DISPLAY,
+        options: ActivityOptions = ActivityOptions.makeBasic().setLaunchDisplayId(displayId),
+        componentName: ComponentName? = mComponentName,
+    ): Int {
+        var result = -1
+        if (parcelable is Intent) {
+            mIntent = parcelable
+            mComponentName = parcelable.component
+            result = callIntent(parcelable, options, userId = mUserId)
+        } else if (componentName != null) {
+            mComponentName = componentName
+            mIntent = Intent(Intent.ACTION_MAIN).apply {
+                component = componentName
+                setPackage(componentName.packageName)
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            result = callIntent(mIntent as Intent, options, userId = mUserId)
+            if (parcelable is PendingIntent) {
+                result = callPendingIntent(parcelable, options)
+            }
+        }
+        return result
+    }
+
+    private fun callIntent(
+        intent: Intent,
+        options: ActivityOptions,
+        withoutAnim: Boolean = true,
+        userId: Int = mUserId,
+    ): Int {
+        if (withoutAnim) intent.flags = intent.flags or Intent.FLAG_ACTIVITY_NO_ANIMATION
+        return activityManager.startActivityAsUserWithFeature(
+            null, SHELL, null, intent,
+            intent.type, null, null, 0, 0,
+            null, options.toBundle(), userId,
+        )
+    }
+
+    private fun callPendingIntent(
+        pendingIntent: PendingIntent,
+        options: ActivityOptions,
+        displayId: Int = options.launchDisplayId,
+    ): Int {
+        val pendingIntentHidden = Refine.unsafeCast<PendingIntentHidden>(pendingIntent)
+        val activityOptionsHidden = Refine.unsafeCast<ActivityOptionsHidden>(options).setCallerDisplayId(displayId)
+        return activityManager.sendIntentSender(
+            pendingIntentHidden.target, pendingIntentHidden.whitelistToken, 0, null,
+            null, null, null, activityOptionsHidden.toBundle()
+        )
+    }
+
+    companion object {
+        const val SHELL = "com.android.shell"
+        const val ACTION_START_INTENT = "com.sunshine.freeform.action.start.intent"
+        const val ACTION_CALL_INTENT = "com.sunshine.freeform.action.call.intent"
+        const val ACTION_DESTROY_FREEFORM = "com.sunshine.freeform.action.destroy.freeform"
+        const val EXTRA_DISPLAY_ID = "com.sunshine.freeform.action.intent.display.id"
+    }
+
+    override fun onScreenOn() {}
+
+    override fun onScreenOff() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mFreeformViews.removeAll { it.isDestroy }
+            if (mFreeformViews.isEmpty()) {
+                stopSelf()
+            }
+        } else {
+            mFreeformViews.removeAll { it.isDestroy }
+            if (mFreeformViews.isEmpty()) {
+                stopSelf()
+            }
+        }
+    }
+
+    override fun onUserPresent() {}
+}
+```
+
+## Cara Edit:
+1. Buka file `FreeformService.kt` di GitHub
+2. Klik ikon **pensil**
+3. Select all → hapus semua → paste code di atas
+4. Commit changes
+5. Actions → Run workflow → Build APK! 🎉                    return START_NOT_STICKY
                 }
             }
             ACTION_DESTROY_FREEFORM -> {
