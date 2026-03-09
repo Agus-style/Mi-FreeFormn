@@ -2,7 +2,7 @@
 
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/DtHnAme/Mi-FreeForm)
 
-<img src="https://raw.githubusercontent.com/DtHnAme/Mi-FreeForm/master/app/src/main/res/mipmap/ic_launcher.png" width="100"/>
+<img src="https://github.com/Agus-style/Mi-FreeFormn/actions/runs/22878710863/artifacts/5839899973" width="100"/>
 
 Mi-FreeForm is an APP that is activated through Shizuku/Sui and can display most apps in the form of freeform. Current support:
 - Open the favorites app in small window mode through the global sidebar
