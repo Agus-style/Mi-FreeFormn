@@ -1385,6 +1385,8 @@ class FreeformView(
         isFloating = false
         pendingTaskDisplayJob?.cancel()
         pendingTaskDisplayJob = null
+        swipeIndicatorView?.let { runCatching { windowManager.removeView(it) } }
+        swipeIndicatorView = null
 
         runCatching {
             windowManager.removeViewImmediate(binding.root)
@@ -1405,13 +1407,70 @@ class FreeformView(
         }
     }
 
-    // Swipe back gesture — deteksi swipe dari kiri ke kanan di tepi kiri layar
+    // Swipe back gesture dengan visual indicator
     private var swipeBackStartX = 0f
     private var swipeBackStartY = 0f
     private var isSwipeBackTracking = false
-    private val SWIPE_BACK_EDGE_WIDTH = 60f  // lebar area tepi kiri (dp) yang trigger swipe back
-    private val SWIPE_BACK_MIN_DISTANCE = 100f  // jarak minimal swipe horizontal
-    private val SWIPE_BACK_MAX_VERTICAL = 80f   // maksimal deviasi vertikal
+    private var swipeIndicatorView: android.widget.ImageView? = null
+    private val SWIPE_BACK_EDGE_WIDTH = 60f
+    private val SWIPE_BACK_MIN_DISTANCE = 100f
+    private val SWIPE_BACK_MAX_VERTICAL = 80f
+
+    private fun showSwipeIndicator(fromLeft: Boolean) {
+        if (swipeIndicatorView != null) return
+        val iv = android.widget.ImageView(context)
+        iv.setImageResource(if (fromLeft) android.R.drawable.ic_media_previous else android.R.drawable.ic_media_next)
+        iv.setColorFilter(android.graphics.Color.WHITE)
+        iv.alpha = 0f
+        val size = (48 * context.resources.displayMetrics.density).toInt()
+        val lp = WindowManager.LayoutParams().apply {
+            width = size
+            height = size
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            format = PixelFormat.TRANSLUCENT
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            gravity = android.view.Gravity.CENTER_VERTICAL or
+                    if (fromLeft) android.view.Gravity.START else android.view.Gravity.END
+            x = if (fromLeft) windowLayoutParams.x - (size / 2) else windowLayoutParams.x + (size / 2)
+            y = windowLayoutParams.y
+        }
+        runCatching {
+            windowManager.addView(iv, lp)
+            iv.animate().alpha(0.85f).setDuration(150).start()
+            swipeIndicatorView = iv
+        }
+    }
+
+    private fun updateSwipeIndicator(progress: Float) {
+        swipeIndicatorView?.let { iv ->
+            val lp = iv.layoutParams as WindowManager.LayoutParams
+            lp.x = (windowLayoutParams.x - (40 * context.resources.displayMetrics.density) + 
+                    (progress * 30 * context.resources.displayMetrics.density)).toInt()
+            runCatching { windowManager.updateViewLayout(iv, lp) }
+            iv.scaleX = 0.8f + (progress * 0.4f)
+            iv.scaleY = 0.8f + (progress * 0.4f)
+        }
+    }
+
+    private fun hideSwipeIndicator(triggered: Boolean) {
+        swipeIndicatorView?.let { iv ->
+            iv.animate()
+                .alpha(0f)
+                .scaleX(if (triggered) 1.5f else 0.5f)
+                .scaleY(if (triggered) 1.5f else 0.5f)
+                .setDuration(200)
+                .withEndAction {
+                    runCatching { windowManager.removeView(iv) }
+                    swipeIndicatorView = null
+                }
+                .start()
+        }
+    }
 
     private fun handleSwipeBackGesture(event: MotionEvent): Boolean {
         val edgeWidth = SWIPE_BACK_EDGE_WIDTH * context.resources.displayMetrics.density
@@ -1420,29 +1479,38 @@ class FreeformView(
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                // Mulai tracking hanya kalau jari mulai dari tepi kiri
                 if (event.x <= edgeWidth) {
                     swipeBackStartX = event.x
                     swipeBackStartY = event.y
                     isSwipeBackTracking = true
+                    showSwipeIndicator(fromLeft = true)
                 } else {
                     isSwipeBackTracking = false
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isSwipeBackTracking) {
+                    val dx = event.x - swipeBackStartX
+                    val progress = (dx / minDistance).coerceIn(0f, 1f)
+                    updateSwipeIndicator(progress)
                 }
             }
             MotionEvent.ACTION_UP -> {
                 if (isSwipeBackTracking) {
                     val dx = event.x - swipeBackStartX
                     val dy = kotlin.math.abs(event.y - swipeBackStartY)
-                    // Swipe ke kanan cukup jauh dan tidak terlalu miring
                     if (dx >= minDistance && dy <= maxVertical) {
                         isSwipeBackTracking = false
+                        hideSwipeIndicator(triggered = true)
                         performBackKey()
-                        return true  // consume event, jangan diteruskan ke app
+                        return true
                     }
+                    hideSwipeIndicator(triggered = false)
                 }
                 isSwipeBackTracking = false
             }
             MotionEvent.ACTION_CANCEL -> {
+                hideSwipeIndicator(triggered = false)
                 isSwipeBackTracking = false
             }
         }
@@ -1564,32 +1632,26 @@ class FreeformView(
             if (!taskList.contains(tId)) return
 
             // Task milik kita pindah ke DEFAULT_DISPLAY
+            // PENTING: Hanya react kalau window sedang floating (diminimize)
+            // Kalau window masih aktif/terbuka penuh, ini berarti navigasi internal app
+            // (buka profil, link, dll) — JANGAN startService karena itu yang bikin spam/buka ulang
             if (newDisplayId == Display.DEFAULT_DISPLAY) {
-                // Pakai coroutine debounce — batalkan job sebelumnya
-                // Ini cegah spam saat Discord/app spawn banyak task sekaligus saat call/notif
+                if (!isFloating) {
+                    // Window masih aktif → ini navigasi internal app, abaikan!
+                    return
+                }
+                // Window sedang floating/minimize → boleh react
                 pendingTaskDisplayJob?.cancel()
                 pendingTaskDisplayJob = scope.launch(Dispatchers.Main) {
                     kotlinx.coroutines.delay(TASK_DISPLAY_DEBOUNCE_MS)
                     if (isDestroy) return@launch
-                    if (isFloating) {
-                        if (config.intent == null) return@launch
-                        context.startService(
-                            Intent(context, FreeformService::class.java)
-                                .setAction(FreeformService.ACTION_START_INTENT)
-                                .putExtra(Intent.EXTRA_INTENT, config.intent)
-                        )
-                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        if (config.useSuiRefuseToFullScreen) {
-                            activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
-                        } else {
-                            context.startService(
-                                Intent(context, FreeformService::class.java)
-                                    .setAction(FreeformService.ACTION_CALL_INTENT)
-                                    .putExtra(Intent.EXTRA_INTENT, config.intent)
-                                    .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
-                            )
-                        }
-                    }
+                    if (!isFloating) return@launch  // double check
+                    if (config.intent == null) return@launch
+                    context.startService(
+                        Intent(context, FreeformService::class.java)
+                            .setAction(FreeformService.ACTION_START_INTENT)
+                            .putExtra(Intent.EXTRA_INTENT, config.intent)
+                    )
                 }
             }
         }
