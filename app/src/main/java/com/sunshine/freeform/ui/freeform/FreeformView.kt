@@ -543,7 +543,10 @@ class FreeformView(
         initTextureViewListener()
 
         windowLayoutParams.apply {
-            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -572,7 +575,10 @@ class FreeformView(
         backgroundViewLayoutParams.apply {
             dimAmount = config.dimAmount
             format = PixelFormat.RGBA_8888
-            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             width = WindowManager.LayoutParams.MATCH_PARENT
             height = WindowManager.LayoutParams.MATCH_PARENT
             flags = windowLayoutParams.flags or
@@ -585,31 +591,17 @@ class FreeformView(
             windowManager.addView(backgroundView, backgroundViewLayoutParams)
             windowManager.addView(binding.root, windowLayoutParams)
         }.onFailure {
+            destroy()
             runCatching {
-                windowManager.removeViewImmediate(backgroundView)
-                windowManager.removeViewImmediate(binding.root)
-            }
-
-            if (Settings.canDrawOverlays(context)) {
-                windowManager.addView(backgroundView, backgroundViewLayoutParams.apply {
-                    type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                })
-                windowManager.addView(binding.root, windowLayoutParams.apply {
-                    type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                })
-            } else {
-                destroy()
-                runCatching {
-                    Toast.makeText(context, context.getString(R.string.request_overlay_permission), Toast.LENGTH_LONG).show()
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}")
-                    )
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }.onFailure {
-                    Toast.makeText(context, context.getString(R.string.request_overlay_permission_fail), Toast.LENGTH_LONG).show()
-                }
+                Toast.makeText(context, context.getString(R.string.request_overlay_permission), Toast.LENGTH_LONG).show()
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                )
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }.onFailure {
+                Toast.makeText(context, context.getString(R.string.request_overlay_permission_fail), Toast.LENGTH_LONG).show()
             }
         }
     }
