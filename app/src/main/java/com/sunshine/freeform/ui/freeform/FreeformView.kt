@@ -50,9 +50,13 @@ import kotlin.math.roundToInt
 class FreeformView(
     override var config: FreeformConfig,
     private val context: Context,
-    var virtualDisplay: VirtualDisplay,
+    private var virtualDisplay: VirtualDisplay,
     var screenListener: ScreenListener,
 ) : FreeformViewAbs(config), View.OnTouchListener, ScreenListener.ScreenStateListener {
+
+    // Getter publik untuk akses displayId dari luar tanpa expose virtualDisplay langsung
+    val displayId: Int
+        get() = virtualDisplay.display.displayId
 
     //ViewModel
     private val viewModel = FreeformViewModel(context)
@@ -1401,9 +1405,55 @@ class FreeformView(
         }
     }
 
+    // Swipe back gesture — deteksi swipe dari kiri ke kanan di tepi kiri layar
+    private var swipeBackStartX = 0f
+    private var swipeBackStartY = 0f
+    private var isSwipeBackTracking = false
+    private val SWIPE_BACK_EDGE_WIDTH = 60f  // lebar area tepi kiri (dp) yang trigger swipe back
+    private val SWIPE_BACK_MIN_DISTANCE = 100f  // jarak minimal swipe horizontal
+    private val SWIPE_BACK_MAX_VERTICAL = 80f   // maksimal deviasi vertikal
+
+    private fun handleSwipeBackGesture(event: MotionEvent): Boolean {
+        val edgeWidth = SWIPE_BACK_EDGE_WIDTH * context.resources.displayMetrics.density
+        val minDistance = SWIPE_BACK_MIN_DISTANCE * context.resources.displayMetrics.density
+        val maxVertical = SWIPE_BACK_MAX_VERTICAL * context.resources.displayMetrics.density
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                // Mulai tracking hanya kalau jari mulai dari tepi kiri
+                if (event.x <= edgeWidth) {
+                    swipeBackStartX = event.x
+                    swipeBackStartY = event.y
+                    isSwipeBackTracking = true
+                } else {
+                    isSwipeBackTracking = false
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isSwipeBackTracking) {
+                    val dx = event.x - swipeBackStartX
+                    val dy = kotlin.math.abs(event.y - swipeBackStartY)
+                    // Swipe ke kanan cukup jauh dan tidak terlalu miring
+                    if (dx >= minDistance && dy <= maxVertical) {
+                        isSwipeBackTracking = false
+                        performBackKey()
+                        return true  // consume event, jangan diteruskan ke app
+                    }
+                }
+                isSwipeBackTracking = false
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                isSwipeBackTracking = false
+            }
+        }
+        return false
+    }
+
     private inner class TouchListener : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
+            // Cek swipe back dulu sebelum diteruskan ke app
+            if (handleSwipeBackGesture(event)) return true
             handleTouch(event)
             when(event.action) {
                 MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
@@ -1442,6 +1492,8 @@ class FreeformView(
     private inner class TouchListenerPreQ : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
+            // Cek swipe back dulu sebelum diteruskan ke app
+            if (handleSwipeBackGesture(event)) return true
             handleTouch(event)
             when(event.action) {
                 MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
