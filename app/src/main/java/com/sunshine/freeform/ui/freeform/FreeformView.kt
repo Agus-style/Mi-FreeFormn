@@ -1637,26 +1637,17 @@ class FreeformView(
             // Task bukan milik kita → abaikan
             if (!taskList.contains(tId)) return
 
-            // Task milik kita pindah ke DEFAULT_DISPLAY
-            // Hapus task dari list — dia sudah tidak di virtual display kita
-            taskList.remove(tId)
-
-            // Hanya react kalau semua task sudah habis dari virtual display
-            // DAN window sedang floating/minimize
-            // Ini bedain antara "app buka activity baru" vs "user sengaja keluar"
-            if (taskList.isEmpty() && isFloating) {
-                pendingTaskDisplayJob?.cancel()
-                pendingTaskDisplayJob = scope.launch(Dispatchers.Main) {
-                    kotlinx.coroutines.delay(TASK_DISPLAY_DEBOUNCE_MS)
-                    if (isDestroy) return@launch
-                    if (!isFloating) return@launch
-                    if (taskList.isNotEmpty()) return@launch // ada task baru masuk, batalkan
-                    if (config.intent == null) return@launch
-                    context.startService(
-                        Intent(context, FreeformService::class.java)
-                            .setAction(FreeformService.ACTION_START_INTENT)
-                            .putExtra(Intent.EXTRA_INTENT, config.intent)
-                    )
+            // Task milik kita kabur ke DEFAULT_DISPLAY
+            // Paksa balik ke virtual display kita segera!
+            if (newDisplayId == Display.DEFAULT_DISPLAY) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    scope.launch(Dispatchers.Main) {
+                        kotlinx.coroutines.delay(100) // delay kecil biar task sempat terdaftar
+                        if (isDestroy) return@launch
+                        runCatching {
+                            activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
+                        }
+                    }
                 }
             }
         }
