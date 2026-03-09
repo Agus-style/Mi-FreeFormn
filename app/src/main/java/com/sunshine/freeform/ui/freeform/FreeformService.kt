@@ -46,7 +46,49 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                 config.intent = intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 config.componentName = intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME)
 
-                val virtualDisplay = createVirtualDisplay()
+                // Cek apakah sudah ada floating window aktif dengan package yang sama
+                // Kalau ada, redirect ke virtual display yang sudah ada
+                // Ini mencegah galeri/picker/activity WA dll kebuka di luar floating window
+                val incomingPackage = (config.intent as? Intent)?.component?.packageName
+                    ?: (config.intent as? Intent)?.`package`
+                    ?: config.componentName?.packageName
+
+                if (incomingPackage != null) {
+                    val existingView = mFreeformViews.firstOrNull {
+                        !it.isDestroy && (
+                            (it.config.intent as? Intent)?.component?.packageName == incomingPackage ||
+                            (it.config.intent as? Intent)?.`package` == incomingPackage ||
+                            it.config.componentName?.packageName == incomingPackage
+                        )
+                    }
+                    if (existingView != null) {
+                        val parcelableRedirect = config.intent
+                        if (parcelableRedirect is Intent) {
+                            val options = ActivityOptions.makeBasic().setLaunchDisplayId(existingView.displayId)
+                            parcelableRedirect.flags = parcelableRedirect.flags or Intent.FLAG_ACTIVITY_NO_ANIMATION
+                            activityManager.startActivityAsUserWithFeature(
+                                null, SHELL, null, parcelableRedirect,
+                                parcelableRedirect.type, null, null, 0, 0,
+                                null, options.toBundle(), config.userId
+                            )
+                        }
+                        mFreeformViews.removeAll { it.isDestroy }
+                        return START_STICKY
+                    }
+                }
+
+                // Cek batas maksimal floating window
+                val activeCount = mFreeformViews.count { !it.isDestroy }
+                val maxWindows = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getInt(PREF_MAX_WINDOWS, DEFAULT_MAX_WINDOWS)
+                if (activeCount >= maxWindows) {
+                    android.widget.Toast.makeText(
+                        this,
+                        "Maksimal $maxWindows floating window aktif. Tutup salah satu dulu.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return START_NOT_STICKY
+                }
                 val freeformView = FreeformView(config, this, virtualDisplay, mScreenListener)
                 freeformView.initSystemService()
                 freeformView.initConfig()
