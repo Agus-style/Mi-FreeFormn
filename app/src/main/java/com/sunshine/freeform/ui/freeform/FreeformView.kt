@@ -1628,25 +1628,36 @@ class FreeformView(
         override fun onTaskDisplayChanged(tId: Int, newDisplayId: Int) {
             if (isDestroy) return
 
-            // Task masuk ke virtual display kita → track
-            if (newDisplayId == virtualDisplay.display.displayId) {
-                if (!taskList.contains(tId)) taskList.add(tId)
+            // Sama persis seperti original — kalau task milik kita dan window floating
+            // dan task kabur ke default display → startService ACTION_START_INTENT
+            // Di multi-window, ini akan trigger moveToFirst() untuk window yang sama
+            if (taskList.contains(tId) && isFloating && newDisplayId == Display.DEFAULT_DISPLAY) {
+                context.startService(
+                    Intent(context, FreeformService::class.java)
+                        .setAction(FreeformService.ACTION_START_INTENT)
+                        .putExtra(Intent.EXTRA_INTENT, config.intent)
+                )
                 return
             }
 
-            // Task bukan milik kita → abaikan
-            if (!taskList.contains(tId)) return
+            // Track task masuk ke virtual display kita
+            if (!taskList.contains(tId) && newDisplayId == virtualDisplay.display.displayId) {
+                taskList.add(tId)
+            }
 
-            // Task milik kita kabur ke DEFAULT_DISPLAY
-            // Paksa balik ke virtual display kita segera!
-            if (newDisplayId == Display.DEFAULT_DISPLAY) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    scope.launch(Dispatchers.Main) {
-                        kotlinx.coroutines.delay(100) // delay kecil biar task sempat terdaftar
-                        if (isDestroy) return@launch
-                        runCatching {
-                            activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
-                        }
+            // Task milik kita kabur ke default display saat window aktif (bukan floating)
+            // Paksa balik atau relaunch
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (!isDestroy && taskList.contains(tId) && newDisplayId == Display.DEFAULT_DISPLAY) {
+                    if (config.useSuiRefuseToFullScreen) {
+                        activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
+                    } else {
+                        context.startService(
+                            Intent(context, FreeformService::class.java)
+                                .setAction(FreeformService.ACTION_CALL_INTENT)
+                                .putExtra(Intent.EXTRA_INTENT, config.intent)
+                                .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
+                        )
                     }
                 }
             }

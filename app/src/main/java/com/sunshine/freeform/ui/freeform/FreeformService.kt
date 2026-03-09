@@ -47,8 +47,8 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                 config.componentName = intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME)
 
                 // Cek apakah sudah ada floating window aktif dengan package yang sama
-                // Kalau ada, redirect ke virtual display yang sudah ada
-                // Ini mencegah galeri/picker/activity WA dll kebuka di luar floating window
+                // Kalau ada dan sedang floating/hidden → moveToFirst (sama seperti behavior original)
+                // Ini yang mencegah galeri/picker/activity internal kebuka di luar
                 val incomingPackage = (config.intent as? Intent)?.component?.packageName
                     ?: (config.intent as? Intent)?.`package`
                     ?: config.componentName?.packageName
@@ -62,15 +62,11 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                         )
                     }
                     if (existingView != null) {
-                        val parcelableRedirect = config.intent
-                        if (parcelableRedirect is Intent) {
-                            val options = ActivityOptions.makeBasic().setLaunchDisplayId(existingView.displayId)
-                            parcelableRedirect.flags = parcelableRedirect.flags or Intent.FLAG_ACTIVITY_NO_ANIMATION
-                            activityManager.startActivityAsUserWithFeature(
-                                null, SHELL, null, parcelableRedirect,
-                                parcelableRedirect.type, null, null, 0, 0,
-                                null, options.toBundle(), config.userId
-                            )
+                        // Persis seperti startFreeformView() di original
+                        if (existingView.isFloating || existingView.isHidden) {
+                            existingView.moveToFirst()
+                        } else {
+                            existingView.showWindow()
                         }
                         mFreeformViews.removeAll { it.isDestroy }
                         return START_STICKY
