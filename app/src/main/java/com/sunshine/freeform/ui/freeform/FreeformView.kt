@@ -50,7 +50,7 @@ import kotlin.math.roundToInt
 class FreeformView(
     override var config: FreeformConfig,
     private val context: Context,
-    private var virtualDisplay: VirtualDisplay,
+    var virtualDisplay: VirtualDisplay,
     var screenListener: ScreenListener,
 ) : FreeformViewAbs(config), View.OnTouchListener, ScreenListener.ScreenStateListener {
 
@@ -134,7 +134,7 @@ class FreeformView(
                         min(tmpWidth, tmpHeight)
         }
 
-    //小窗的“尺寸”，该尺寸只在小窗内屏幕方向改变时变化
+    //小窗的"尺寸"，该尺寸只在小窗内屏幕方向改变时变化
     private var freeformScreenHeight = 0
     private var freeformScreenWidth = 0
 
@@ -477,9 +477,6 @@ class FreeformView(
     }
 
     override fun onScreenOff() {
-        //挂起状态无需更新
-        //修复 在有正在运行程序的情况下锁屏，米窗崩溃的问题 q220902.1
-        //优化 锁屏后小窗的状态 q220917.3
         if (!isHidden) {
             windowLayoutParams.flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -491,7 +488,6 @@ class FreeformView(
     }
 
     override fun onUserPresent() {
-        //挂起状态无需更新
         if (!isHidden) {
             windowLayoutParams.flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -510,25 +506,16 @@ class FreeformView(
     }
 
     private fun initTextureViewListener() {
-        //冷启动监听
         var updateFrameCount = 0
         var initFinish = false
 
         binding.textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(
-                surface: SurfaceTexture,
-                width: Int,
-                height: Int
-            ) {
+            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                 surface.setDefaultBufferSize(freeformScreenWidth, freeformScreenHeight)
                 virtualDisplay.surface = Surface(surface)
             }
 
-            override fun onSurfaceTextureSizeChanged(
-                surface: SurfaceTexture,
-                width: Int,
-                height: Int
-            ) {
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
                 surface.setDefaultBufferSize(freeformScreenWidth, freeformScreenHeight)
             }
 
@@ -575,11 +562,9 @@ class FreeformView(
             height = rootHeight
         }
 
-        //横屏移动到屏幕左侧显示小窗
         if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
             windowLayoutParams.apply {
                 x = genCenterLocation()[0]
-                //往上移动一些
                 y = genCenterLocation()[1]
             }
         }
@@ -621,9 +606,7 @@ class FreeformView(
                         Uri.parse("package:${context.packageName}")
                     )
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(
-                        intent
-                    )
+                    context.startActivity(intent)
                 }.onFailure {
                     Toast.makeText(context, context.getString(R.string.request_overlay_permission_fail), Toast.LENGTH_LONG).show()
                 }
@@ -631,9 +614,6 @@ class FreeformView(
         }
     }
 
-    /**
-     * 禁用更新过渡动画
-     */
     private fun setWindowNoUpdateAnimation() {
         val classname = "android.view.WindowManager\$LayoutParams"
         runCatching {
@@ -750,9 +730,6 @@ class FreeformView(
         )
     }
 
-    /**
-     * 如果小窗无法控制了，可以尝试移动到屏幕中心以控制
-     */
     override fun toScreenCenter() {
         if (isFloating) return
         windowLayoutParams.x = 0
@@ -811,67 +788,46 @@ class FreeformView(
         refreshActionScale()
     }
 
-    //按下时的坐标
     private var lastX = -1f
     private var lastY = -1f
-    //当前正在操作的界面id
     private var touchId = -1
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                handleDownEvent(v, event)
-            }
-            MotionEvent.ACTION_MOVE -> {
-                handleMoveEvent(v, event)
-            }
-            MotionEvent.ACTION_UP -> {
-                handleUpEvent(v, event)
-            }
+            MotionEvent.ACTION_DOWN -> handleDownEvent(v, event)
+            MotionEvent.ACTION_MOVE -> handleMoveEvent(v, event)
+            MotionEvent.ACTION_UP -> handleUpEvent(v, event)
         }
         return true
     }
 
     private fun handleDownEvent(v: View, event: MotionEvent) {
         if (touchId == -1) touchId = v.id
-
         lastX = event.rawX
         lastY = event.rawY
         when(v.id) {
-            R.id.root, backgroundView.id -> {
-                backgroundGestureDetector.onTouchEvent(event)
-            }
-            R.id.middleView -> {
-                middleGestureDetector.onTouchEvent(event)
-            }
-            R.id.sideView -> {
-                middleGestureDetector.onTouchEvent(event)
-            }
+            R.id.root, backgroundView.id -> backgroundGestureDetector.onTouchEvent(event)
+            R.id.middleView -> middleGestureDetector.onTouchEvent(event)
+            R.id.sideView -> middleGestureDetector.onTouchEvent(event)
         }
     }
 
     private fun handleMoveEvent(v: View, event: MotionEvent) {
         when(v.id) {
-            R.id.root, backgroundView.id -> {
-                backgroundGestureDetector.onTouchEvent(event)
-            }
+            R.id.root, backgroundView.id -> backgroundGestureDetector.onTouchEvent(event)
             R.id.middleView -> {
                 if (touchId == R.id.middleView) {
-                    val dx = event.rawX - lastX
                     val dy = event.rawY - lastY
-
                     handleToFloatScale(0f, dy)
                     lastX = event.rawX
                     lastY = event.rawY
-
                     middleGestureDetector.onTouchEvent(event)
                 }
             }
             R.id.sideView -> {
                 if (touchId == R.id.sideView) {
                     val dx = event.rawX - lastX
-                    val dy = event.rawY - lastY
-
                     handleToFloatScale(dx, 0f)
                     lastX = event.rawX
                     lastY = event.rawY
@@ -882,9 +838,7 @@ class FreeformView(
 
     private fun handleUpEvent(v: View, event: MotionEvent) {
         when (v.id) {
-            R.id.root, backgroundView.id -> {
-                backgroundGestureDetector.onTouchEvent(event)
-            }
+            R.id.root, backgroundView.id -> backgroundGestureDetector.onTouchEvent(event)
             R.id.middleView -> {
                 middleGestureDetector.onTouchEvent(event)
                 notifyToFloat()
@@ -919,30 +873,27 @@ class FreeformView(
     private fun cardViewMarginAnim(topStartMargin: Int, bottomStartMargin: Int, rightStartMargin: Int, topEndMargin: Int, bottomEndMargin: Int, rightEndMargin: Int): Animator {
         return AnimatorSet().apply {
             playTogether(
-                ValueAnimator.ofInt(topStartMargin, topEndMargin)
-                    .apply {
-                        addUpdateListener {
-                            binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
-                                topMargin = it.animatedValue as Int
-                            }
+                ValueAnimator.ofInt(topStartMargin, topEndMargin).apply {
+                    addUpdateListener {
+                        binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
+                            topMargin = it.animatedValue as Int
                         }
-                    },
-                ValueAnimator.ofInt(bottomStartMargin, bottomEndMargin)
-                    .apply {
-                        addUpdateListener {
-                            binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
-                                bottomMargin = it.animatedValue as Int
-                            }
+                    }
+                },
+                ValueAnimator.ofInt(bottomStartMargin, bottomEndMargin).apply {
+                    addUpdateListener {
+                        binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
+                            bottomMargin = it.animatedValue as Int
                         }
-                    },
-                ValueAnimator.ofInt(rightStartMargin, rightEndMargin)
-                    .apply {
-                        addUpdateListener {
-                            binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
-                                rightMargin = it.animatedValue as Int
-                            }
+                    }
+                },
+                ValueAnimator.ofInt(rightStartMargin, rightEndMargin).apply {
+                    addUpdateListener {
+                        binding.cardRoot.layoutParams = (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).apply {
+                            rightMargin = it.animatedValue as Int
                         }
-                    },
+                    }
+                },
             )
         }
     }
@@ -951,30 +902,24 @@ class FreeformView(
         val moveAnim = AnimatorSet()
         if (endCoordinate[0] != -1) {
             moveAnim.play(
-                ValueAnimator.ofInt(startCoordinate[0], endCoordinate[0])
-                    .apply {
-                        addUpdateListener {
-                            windowManager.updateViewLayout(
-                                binding.root,
-                                windowLayoutParams.apply {
-                                    x = it.animatedValue as Int
-                                })
-                        }
-                    },
+                ValueAnimator.ofInt(startCoordinate[0], endCoordinate[0]).apply {
+                    addUpdateListener {
+                        windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                            x = it.animatedValue as Int
+                        })
+                    }
+                },
             )
         }
         if (endCoordinate[1] != -1) {
             moveAnim.play(
-                ValueAnimator.ofInt(startCoordinate[1], endCoordinate[1])
-                    .apply {
-                        addUpdateListener {
-                            windowManager.updateViewLayout(
-                                binding.root,
-                                windowLayoutParams.apply {
-                                    y = it.animatedValue as Int
-                                })
-                        }
-                    },
+                ValueAnimator.ofInt(startCoordinate[1], endCoordinate[1]).apply {
+                    addUpdateListener {
+                        windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                            y = it.animatedValue as Int
+                        })
+                    }
+                },
             )
         }
         return moveAnim
@@ -994,7 +939,6 @@ class FreeformView(
                 if (virtualDisplayRotation == VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) {
                     freeformWidth = ((freeformHeight - (cardHeightMargin * config.widthHeightRatio)) / config.widthHeightRatio).roundToInt()
                 }
-
                 mScaleX = freeformWidth / rootWidth.toFloat()
                 mScaleY = freeformHeight / rootHeight.toFloat()
                 isZoomOut = true
@@ -1008,7 +952,6 @@ class FreeformView(
                 if (virtualDisplayRotation == VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) {
                     freeformHeight = ((freeformWidth + cardHeightMargin) * config.widthHeightRatio).roundToInt()
                 }
-
                 mScaleX = freeformWidth / rootWidth.toFloat()
                 mScaleY = freeformHeight / rootHeight.toFloat()
                 isZoomOut = true
@@ -1023,15 +966,10 @@ class FreeformView(
             val scaleY: Float = hangUpViewHeight / rootHeight.toFloat()
 
             if (mScaleY <= goFloatScale) {
-                val windowCoordinate = intArrayOf(
-                    windowLayoutParams.x,
-                    windowLayoutParams.y,
-                )
-
+                val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
                 var location = genFloatViewLocation()
-                if (lastFloatViewLocation[0] != -1) {
-                    location = lastFloatViewLocation
-                }
+                if (lastFloatViewLocation[0] != -1) location = lastFloatViewLocation
+
                 AnimatorSet().apply {
                     playTogether(
                         ObjectAnimator.ofFloat(binding.freeformRoot, View.SCALE_X, mScaleX, scaleX),
@@ -1041,9 +979,7 @@ class FreeformView(
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).topMargin,
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).bottomMargin,
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).rightMargin,
-                            0,
-                            0,
-                            0,
+                            0, 0, 0,
                         ),
                         moveViewAnim(windowCoordinate, location),
                     )
@@ -1051,16 +987,13 @@ class FreeformView(
                         onStart = {
                             AnimatorSet().apply {
                                 playTogether(
-                                    ValueAnimator.ofFloat(config.dimAmount, 0f)
-                                        .apply {
-                                            addUpdateListener {
-                                                windowManager.updateViewLayout(
-                                                    backgroundView,
-                                                    backgroundViewLayoutParams.apply {
-                                                        dimAmount = it.animatedValue as Float
-                                                    })
-                                            }
-                                        },
+                                    ValueAnimator.ofFloat(config.dimAmount, 0f).apply {
+                                        addUpdateListener {
+                                            windowManager.updateViewLayout(backgroundView, backgroundViewLayoutParams.apply {
+                                                dimAmount = it.animatedValue as Float
+                                            })
+                                        }
+                                    },
                                 )
                                 startDelay = 125
                                 duration = 600
@@ -1068,12 +1001,10 @@ class FreeformView(
                                     onStart = {
                                         backgroundView.visibility = View.GONE
                                         binding.textureView.setOnTouchListener(null)
-
                                         isFloating = true
                                     },
                                     onEnd = {
                                         binding.textureView.setOnTouchListener(FloatViewTouchListener())
-
                                         setWindowEnableUpdateAnimation()
                                     },
                                 )
@@ -1088,7 +1019,6 @@ class FreeformView(
                                 height = (rootHeight * scaleY).roundToInt()
                                 width = (rootWidth * scaleX).roundToInt()
                             })
-
                             binding.freeformRoot.scaleY = 1f
                             binding.freeformRoot.scaleX = 1f
                         }
@@ -1096,7 +1026,7 @@ class FreeformView(
                     duration = 400
                     start()
                 }
-            } else if (mScaleY >= goFullScale){
+            } else if (mScaleY >= goFullScale) {
                 AnimatorSet().apply {
                     playTogether(
                         ObjectAnimator.ofFloat(binding.freeformRoot, View.SCALE_X, mScaleX, 1f),
@@ -1106,9 +1036,7 @@ class FreeformView(
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).topMargin,
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).bottomMargin,
                             (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).rightMargin,
-                            0,
-                            0,
-                            0,
+                            0, 0, 0,
                         ),
                     )
                     addListener(
@@ -1127,7 +1055,6 @@ class FreeformView(
                 }
             } else {
                 val restoreScale = getRestoreFreeformScale()
-
                 AnimatorSet().apply {
                     playTogether(
                         ObjectAnimator.ofFloat(binding.freeformRoot, View.SCALE_X, mScaleX, restoreScale[0]),
@@ -1143,15 +1070,9 @@ class FreeformView(
     }
 
     private fun moveFloatViewLocation(location: IntArray, reset: Boolean) {
-        val windowCoordinate = intArrayOf(
-            windowLayoutParams.x,
-            windowLayoutParams.y,
-        )
-
+        val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
         AnimatorSet().apply {
-            playTogether(
-                moveViewAnim(windowCoordinate, location),
-            )
+            playTogether(moveViewAnim(windowCoordinate, location))
             addListener(
                 onStart = {
                     if (reset) {
@@ -1172,17 +1093,12 @@ class FreeformView(
 
     private fun moveHiddenViewLocation(location: IntArray) {
         val layoutParams = hiddenView.layoutParams as WindowManager.LayoutParams
-        val windowCoordinate = intArrayOf(
-            layoutParams.x,
-            layoutParams.y,
-        )
+        val windowCoordinate = intArrayOf(layoutParams.x, layoutParams.y)
 
         var position = 0
-        // R
         if (layoutParams.x > 0) {
             location[0] += (hangUpViewWidth + screenPaddingX)
             position = 1
-        // L
         } else {
             location[0] -= (hangUpViewWidth + screenPaddingX)
             position = -1
@@ -1192,35 +1108,19 @@ class FreeformView(
 
         AnimatorSet().apply {
             playTogether(
-                ValueAnimator.ofInt(windowCoordinate[0], (realScreenWidth - floatingButtonWidth) / 2 * position)
-                    .apply {
-                        addUpdateListener {
-                            windowManager.updateViewLayout(
-                                hiddenView,
-                                layoutParams.apply {
-                                    x = it.animatedValue as Int
-                            })
-                        }
-                    },
-                ValueAnimator.ofInt(windowCoordinate[1], location[1])
-                    .apply {
-                        addUpdateListener {
-                            windowManager.updateViewLayout(
-                                hiddenView,
-                                layoutParams.apply {
-                                    y = it.animatedValue as Int
-                            })
-                        }
-                    },
+                ValueAnimator.ofInt(windowCoordinate[0], (realScreenWidth - floatingButtonWidth) / 2 * position).apply {
+                    addUpdateListener {
+                        windowManager.updateViewLayout(hiddenView, layoutParams.apply { x = it.animatedValue as Int })
+                    }
+                },
+                ValueAnimator.ofInt(windowCoordinate[1], location[1]).apply {
+                    addUpdateListener {
+                        windowManager.updateViewLayout(hiddenView, layoutParams.apply { y = it.animatedValue as Int })
+                    }
+                },
                 moveViewAnim(
-                    intArrayOf(
-                        windowLayoutParams.x,
-                        windowLayoutParams.y,
-                    ),
-                    intArrayOf(
-                        location[0],
-                        location[1],
-                    )
+                    intArrayOf(windowLayoutParams.x, windowLayoutParams.y),
+                    intArrayOf(location[0], location[1])
                 )
             )
             duration = 600
@@ -1232,13 +1132,11 @@ class FreeformView(
     private lateinit var hiddenView: View
 
     private inner class FloatViewTouchListener : View.OnTouchListener {
-        var moveStartX : Float = -1f
-        var moveStartY : Float = -1f
-
-        var movedX : Float = -1f
-        var movedY : Float = -1f
-
-        var isMoved : Boolean = false
+        var moveStartX: Float = -1f
+        var moveStartY: Float = -1f
+        var movedX: Float = -1f
+        var movedY: Float = -1f
+        var isMoved: Boolean = false
 
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View?, event: MotionEvent): Boolean {
@@ -1256,12 +1154,10 @@ class FreeformView(
                     movedX = event.rawX - moveStartX
                     movedY = event.rawY - moveStartY
                     isMoved = true
-
                     windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
                         x += movedX.toInt()
                         y += movedY.toInt()
                     })
-
                     moveStartX = event.rawX
                     moveStartY = event.rawY
                 }
@@ -1269,11 +1165,7 @@ class FreeformView(
                     if (isMoved) {
                         val nowX = event.rawX
                         val nowY = event.rawY
-
-                        val windowCoordinate = intArrayOf(
-                            windowLayoutParams.x,
-                            windowLayoutParams.y,
-                        )
+                        val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
 
                         if (windowCoordinate[1] >= (realScreenHeight - screenPaddingY) / 2) {
                             destroy()
@@ -1285,49 +1177,39 @@ class FreeformView(
                         hangUpPosition[1] = windowCoordinate[1] <= 0
 
                         val location = genFloatViewLocation()
-
                         location[1] = windowLayoutParams.y
 
-                        // min Y
                         if (nowY < (realScreenHeight * 0.1f)) {
                             location[1] = (hangUpViewHeight - realScreenHeight + screenPaddingY) / 2
                         }
-
-                        // max Y
                         if (nowY > (realScreenHeight - (realScreenHeight * 0.1f))) {
                             location[1] = (realScreenHeight - hangUpViewHeight - screenPaddingY) / 2
                         }
 
                         var position = 0
-                        // L
                         if (windowCoordinate[0] <= (realScreenWidth - (screenPaddingX / 2)) / -2) {
                             location[0] -= (hangUpViewWidth + screenPaddingX)
                             position = -1
-                        // R
                         } else if (windowCoordinate[0] >= (realScreenWidth - (screenPaddingX / 2)) / 2) {
                             location[0] += (hangUpViewWidth + screenPaddingX)
                             position = 1
                         }
 
                         AnimatorSet().apply {
-                            playTogether(
-                                moveViewAnim(windowCoordinate, location),
-                            )
-                            addListener (
+                            playTogether(moveViewAnim(windowCoordinate, location))
+                            addListener(
                                 onStart = {
                                     if (position != 0) {
                                         isHidden = true
                                         hiddenView = LayoutInflater.from(context).inflate(R.layout.view_floating_button, null, false)
-                                        hiddenView.root.apply {
-                                            setOnTouchListener(this@FloatViewTouchListener)
-                                        }
+                                        hiddenView.root.apply { setOnTouchListener(this@FloatViewTouchListener) }
                                         if (position == 1)
                                             hiddenView.backgroundView.background = context.getDrawable(R.drawable.floating_button_bg_right)
 
                                         val floatingButtonWidth = context.resources.getDimension(R.dimen.floating_button_width).toInt()
                                         val floatingButtonHeight = context.resources.getDimension(R.dimen.floating_button_height).toInt()
 
-                                        windowManager.addView(hiddenView,  WindowManager.LayoutParams().apply {
+                                        windowManager.addView(hiddenView, WindowManager.LayoutParams().apply {
                                             x = (realScreenWidth - floatingButtonWidth) / 2 * position
                                             y = location[1]
                                             width = floatingButtonWidth
@@ -1342,9 +1224,7 @@ class FreeformView(
                                     }
                                 },
                                 onEnd = {
-                                    if (!isHidden) {
-                                        lastFloatViewLocation = location
-                                    }
+                                    if (!isHidden) lastFloatViewLocation = location
                                     isMoved = false
                                 }
                             )
@@ -1367,9 +1247,7 @@ class FreeformView(
             floatViewToMiniView()
             return true
         }
-
-        override fun onLongPress(e: MotionEvent) {
-        }
+        override fun onLongPress(e: MotionEvent) {}
     })
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1380,11 +1258,7 @@ class FreeformView(
             binding.textureView.setOnTouchListener(touchListenerPreQ)
         }
 
-        val windowCoordinate = intArrayOf(
-            windowLayoutParams.x,
-            windowLayoutParams.y,
-        )
-
+        val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
         val restoreScale = getRestoreFreeformScale()
         val center: IntArray = genCenterLocation()
 
@@ -1408,7 +1282,6 @@ class FreeformView(
                     })
                     binding.freeformRoot.scaleX = mScaleX
                     binding.freeformRoot.scaleY = mScaleY
-
                     binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius)
 
                     var topMargin = 0f
@@ -1420,23 +1293,9 @@ class FreeformView(
 
                     AnimatorSet().apply {
                         playTogether(
-                            ObjectAnimator.ofFloat(
-                                binding.bottomBar.root,
-                                View.ALPHA,
-                                1f
-                            ),
-                            ObjectAnimator.ofFloat(
-                                binding.freeformRoot,
-                                View.SCALE_X,
-                                mScaleX,
-                                restoreScale[0]
-                            ),
-                            ObjectAnimator.ofFloat(
-                                binding.freeformRoot,
-                                View.SCALE_Y,
-                                mScaleY,
-                                restoreScale[1]
-                            ),
+                            ObjectAnimator.ofFloat(binding.bottomBar.root, View.ALPHA, 1f),
+                            ObjectAnimator.ofFloat(binding.freeformRoot, View.SCALE_X, mScaleX, restoreScale[0]),
+                            ObjectAnimator.ofFloat(binding.freeformRoot, View.SCALE_Y, mScaleY, restoreScale[1]),
                             cardViewMarginAnim(
                                 (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).topMargin,
                                 (binding.cardRoot.layoutParams as ConstraintLayout.LayoutParams).bottomMargin,
@@ -1452,9 +1311,7 @@ class FreeformView(
                         start()
                     }
                 },
-                onEnd = {
-                    backgroundView.visibility = View.VISIBLE
-                }
+                onEnd = { backgroundView.visibility = View.VISIBLE }
             )
             duration = 400
             start()
@@ -1465,26 +1322,18 @@ class FreeformView(
 
     @SuppressLint("ClickableViewAccessibility")
     private fun hiddenViewToFloatView(goMiniView: Boolean) {
-        val windowCoordinate = intArrayOf(
-            windowLayoutParams.x,
-            windowLayoutParams.y,
-        )
-
+        val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
         hangUpPosition[0] = windowCoordinate[0] <= 0
         hangUpPosition[1] = windowCoordinate[1] <= 0
 
         val location: IntArray = intArrayOf(
-            (if (hangUpPosition[0])
-                ((realScreenWidth - hangUpViewWidth - screenPaddingX) / -2)
-            else
-                ((realScreenWidth - hangUpViewWidth - screenPaddingX) / 2)),
+            (if (hangUpPosition[0]) ((realScreenWidth - hangUpViewWidth - screenPaddingX) / -2)
+            else ((realScreenWidth - hangUpViewWidth - screenPaddingX) / 2)),
             -1,
         )
 
         AnimatorSet().apply {
-            playTogether(
-                moveViewAnim(windowCoordinate, location),
-            )
+            playTogether(moveViewAnim(windowCoordinate, location))
             addListener(
                 onStart = {
                     hiddenView.root.setOnTouchListener(null)
@@ -1493,14 +1342,9 @@ class FreeformView(
                 },
                 onEnd = {
                     if (!isHidden) {
-                        lastFloatViewLocation = intArrayOf(
-                            location[0],
-                            windowCoordinate[1],
-                        )
+                        lastFloatViewLocation = intArrayOf(location[0], windowCoordinate[1])
                     }
-                    if (goMiniView) {
-                        floatViewToMiniView()
-                    }
+                    if (goMiniView) floatViewToMiniView()
                 }
             )
             duration = 400
@@ -1517,25 +1361,16 @@ class FreeformView(
     })
 
     override fun destroy() {
-        //记录位置
         if (viewModel.getBooleanSp("remember_freeform_position", false)) {
             val sp = context.getSharedPreferences(MiFreeform.APP_SETTINGS_NAME, Context.MODE_PRIVATE)
             if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
-                sp.edit()
-                    .putInt(REMEMBER_LAND_X, lastFloatViewLocation[0])
-                    .putInt(REMEMBER_LAND_Y, lastFloatViewLocation[1])
-                    .apply()
+                sp.edit().putInt(REMEMBER_LAND_X, lastFloatViewLocation[0]).putInt(REMEMBER_LAND_Y, lastFloatViewLocation[1]).apply()
             } else {
-                sp.edit()
-                    .putInt(REMEMBER_X, lastFloatViewLocation[0])
-                    .putInt(REMEMBER_Y, lastFloatViewLocation[1])
-                    .apply()
+                sp.edit().putInt(REMEMBER_X, lastFloatViewLocation[0]).putInt(REMEMBER_Y, lastFloatViewLocation[1]).apply()
             }
         }
 
-        if (isHidden) {
-            windowManager.removeView(hiddenView)
-        }
+        if (isHidden) windowManager.removeView(hiddenView)
         if (isFloating) {
             windowLayoutParams.x = 0
             windowLayoutParams.y = 0
@@ -1554,9 +1389,7 @@ class FreeformView(
             virtualDisplay.surface = null
         }
 
-        runCatching {
-            iWindowManager.removeRotationWatcher(iRotationWatcher)
-        }
+        runCatching { iWindowManager.removeRotationWatcher(iRotationWatcher) }
 
         screenListener.removeScreenStateListener(this@FreeformView)
         viewModel.unregisterOnSharedPreferenceChangeListener(sharedPreferencesChangeListener)
@@ -1566,25 +1399,17 @@ class FreeformView(
         }
     }
 
-    //优化 将触摸设置为一等公民，以支持多点触控，也可以看一下为什么那样，多点触控就不支持了... q220906.1
-    private inner class TouchListener : View.OnTouchListener{
+    private inner class TouchListener : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             handleTouch(event)
             when(event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    touchId = R.id.textureView
-                }
-                MotionEvent.ACTION_UP -> {
-                    touchId = -1
-                }
+                MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
+                MotionEvent.ACTION_UP -> touchId = -1
             }
             return true
         }
 
-        /**
-         * 触控处理
-         */
         private fun handleTouch(event: MotionEvent) {
             val pointerCoords: Array<MotionEvent.PointerCoords?> = arrayOfNulls(event.pointerCount)
             val pointerProperties: Array<MotionEvent.PointerProperties?> = arrayOfNulls(event.pointerCount)
@@ -1600,24 +1425,12 @@ class FreeformView(
                 }
                 pointerProperties[i] = pointerProperty
             }
-
             val newEvent = MotionEvent.obtain(
-                event.downTime,
-                event.eventTime,
-                event.action,
-                event.pointerCount,
-                pointerProperties,
-                pointerCoords,
-                event.metaState,
-                event.buttonState,
-                event.xPrecision,
-                event.yPrecision,
-                event.deviceId,
-                event.edgeFlags,
-                event.source,
-                event.flags
+                event.downTime, event.eventTime, event.action, event.pointerCount,
+                pointerProperties, pointerCoords, event.metaState, event.buttonState,
+                event.xPrecision, event.yPrecision, event.deviceId, event.edgeFlags,
+                event.source, event.flags
             )
-
             setDisplayIdMethod?.invoke(newEvent, virtualDisplay.display.displayId)
             inputManager.injectInputEvent(newEvent, 0)
             newEvent.recycle()
@@ -1629,19 +1442,12 @@ class FreeformView(
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             handleTouch(event)
             when(event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    touchId = R.id.textureView
-                }
-                MotionEvent.ACTION_UP -> {
-                    touchId = -1
-                }
+                MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
+                MotionEvent.ACTION_UP -> touchId = -1
             }
             return true
         }
 
-        /**
-         * 触控处理
-         */
         private fun handleTouch(event: MotionEvent) {
             val pointerCoords: Array<MotionEvent.PointerCoords?> = arrayOfNulls(event.pointerCount)
             val pointerProperties: Array<MotionEvent.PointerProperties?> = arrayOfNulls(event.pointerCount)
@@ -1657,22 +1463,11 @@ class FreeformView(
                 }
                 pointerProperties[i] = pointerProperty
             }
-
             val newEvent = MotionEvent.obtain(
-                event.downTime,
-                event.eventTime,
-                event.action,
-                event.pointerCount,
-                pointerProperties,
-                pointerCoords,
-                event.metaState,
-                event.buttonState,
-                event.xPrecision,
-                event.yPrecision,
-                event.deviceId,
-                event.edgeFlags,
-                event.source,
-                event.flags
+                event.downTime, event.eventTime, event.action, event.pointerCount,
+                pointerProperties, pointerCoords, event.metaState, event.buttonState,
+                event.xPrecision, event.yPrecision, event.deviceId, event.edgeFlags,
+                event.source, event.flags
             )
             inputManager.injectInputEvent(newEvent, virtualDisplay.display.displayId)
             newEvent.recycle()
@@ -1694,9 +1489,7 @@ class FreeformView(
 
         override fun onTaskRemovalStarted(taskInfo: ActivityManager.RunningTaskInfo) {
             if (taskList.contains(taskInfo.taskId)) {
-                scope.launch(Dispatchers.Main) {
-                    destroy()
-                }
+                scope.launch(Dispatchers.Main) { destroy() }
             }
         }
 
@@ -1712,7 +1505,6 @@ class FreeformView(
                     if (config.useSuiRefuseToFullScreen)
                         activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
                     else
-                        // try relaunch
                         context.startService(
                             Intent(context, FreeformService::class.java)
                                 .setAction(FreeformService.ACTION_CALL_INTENT)
@@ -1723,40 +1515,32 @@ class FreeformView(
         }
 
         override fun onTaskRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
-            //q220902.2 某些竖屏软件也会横屏，经查，会有一个requestedOrientation为2的情况，将其转为1
             var tempRotation = requestedOrientation
             if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
             if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
                 virtualDisplayRotation = tempRotation
-                scope.launch(Dispatchers.Main) {
-                    onFreeFormRotationChanged()
-                }
+                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
             }
         }
 
-        //q220903.2 Android 10系统上需要该回调监听
         override fun onActivityRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
             var tempRotation = requestedOrientation
             if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
             if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
                 virtualDisplayRotation = tempRotation
-                scope.launch(Dispatchers.Main) {
-                    onFreeFormRotationChanged()
-                }
+                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
             }
         }
     }
 
     companion object {
         private const val TAG = "FreeformView"
-
         const val REMEMBER_X = "freeform_remember_x"
         const val REMEMBER_Y = "freeform_remember_y"
         const val REMEMBER_LAND_X = "freeform_remember_land_x"
         const val REMEMBER_LAND_Y = "freeform_remember_land_y"
         const val REMEMBER_HEIGHT = "freeform_remember_height"
         const val REMEMBER_LAND_HEIGHT = "freeform_remember_land_height"
-
         private const val VIRTUAL_DISPLAY_ROTATION_PORTRAIT = 1
         private const val VIRTUAL_DISPLAY_ROTATION_LANDSCAPE = 0
     }
