@@ -85,6 +85,7 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                     ).show()
                     return START_NOT_STICKY
                 }
+                val virtualDisplay = createVirtualDisplay()
                 val freeformView = FreeformView(config, this, virtualDisplay, mScreenListener)
                 freeformView.initSystemService()
                 freeformView.initConfig()
@@ -185,5 +186,8 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
         const val ACTION_CALL_INTENT = "com.sunshine.freeform.action.call.intent"
         const val ACTION_DESTROY_FREEFORM = "com.sunshine.freeform.action.destroy.freeform"
         const val EXTRA_DISPLAY_ID = "com.sunshine.freeform.action.intent.display.id"
+        const val PREFS_NAME = "freeform_settings"
+        const val PREF_MAX_WINDOWS = "max_freeform_windows"
+        const val DEFAULT_MAX_WINDOWS = 5
     }
 }
