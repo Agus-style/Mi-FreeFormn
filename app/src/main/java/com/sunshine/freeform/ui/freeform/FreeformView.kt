@@ -1419,10 +1419,17 @@ class FreeformView(
     private fun showSwipeIndicator(fromLeft: Boolean) {
         if (swipeIndicatorView != null) return
         val iv = android.widget.ImageView(context)
-        iv.setImageResource(if (fromLeft) android.R.drawable.ic_media_previous else android.R.drawable.ic_media_next)
+        iv.setImageResource(android.R.drawable.ic_media_previous)
         iv.setColorFilter(android.graphics.Color.WHITE)
         iv.alpha = 0f
+        iv.scaleX = if (fromLeft) 1f else -1f // flip untuk kanan
         val size = (48 * context.resources.displayMetrics.density).toInt()
+        val bg = android.graphics.drawable.GradientDrawable()
+        bg.shape = android.graphics.drawable.GradientDrawable.OVAL
+        bg.setColor(0xAA000000.toInt())
+        iv.background = bg
+        iv.setPadding(12, 12, 12, 12)
+
         val lp = WindowManager.LayoutParams().apply {
             width = size
             height = size
@@ -1434,14 +1441,13 @@ class FreeformView(
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            gravity = android.view.Gravity.CENTER_VERTICAL or
-                    if (fromLeft) android.view.Gravity.START else android.view.Gravity.END
-            x = if (fromLeft) windowLayoutParams.x - (size / 2) else windowLayoutParams.x + (size / 2)
+            // Posisi di tengah vertikal floating window
+            x = windowLayoutParams.x + if (fromLeft) -(size / 2) else (windowLayoutParams.width - size / 2)
             y = windowLayoutParams.y
         }
         runCatching {
             windowManager.addView(iv, lp)
-            iv.animate().alpha(0.85f).setDuration(150).start()
+            iv.animate().alpha(0.9f).setDuration(150).start()
             swipeIndicatorView = iv
         }
     }
@@ -1632,20 +1638,19 @@ class FreeformView(
             if (!taskList.contains(tId)) return
 
             // Task milik kita pindah ke DEFAULT_DISPLAY
-            // PENTING: Hanya react kalau window sedang floating (diminimize)
-            // Kalau window masih aktif/terbuka penuh, ini berarti navigasi internal app
-            // (buka profil, link, dll) — JANGAN startService karena itu yang bikin spam/buka ulang
-            if (newDisplayId == Display.DEFAULT_DISPLAY) {
-                if (!isFloating) {
-                    // Window masih aktif → ini navigasi internal app, abaikan!
-                    return
-                }
-                // Window sedang floating/minimize → boleh react
+            // Hapus task dari list — dia sudah tidak di virtual display kita
+            taskList.remove(tId)
+
+            // Hanya react kalau semua task sudah habis dari virtual display
+            // DAN window sedang floating/minimize
+            // Ini bedain antara "app buka activity baru" vs "user sengaja keluar"
+            if (taskList.isEmpty() && isFloating) {
                 pendingTaskDisplayJob?.cancel()
                 pendingTaskDisplayJob = scope.launch(Dispatchers.Main) {
                     kotlinx.coroutines.delay(TASK_DISPLAY_DEBOUNCE_MS)
                     if (isDestroy) return@launch
-                    if (!isFloating) return@launch  // double check
+                    if (!isFloating) return@launch
+                    if (taskList.isNotEmpty()) return@launch // ada task baru masuk, batalkan
                     if (config.intent == null) return@launch
                     context.startService(
                         Intent(context, FreeformService::class.java)
