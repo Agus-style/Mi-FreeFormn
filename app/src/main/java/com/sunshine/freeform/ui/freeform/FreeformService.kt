@@ -40,6 +40,19 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
 
         when (intent.action) {
             ACTION_START_INTENT -> {
+                // Cek batas maksimal floating window
+                val activeCount = mFreeformViews.count { !it.isDestroy }
+                val maxWindows = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getInt(PREF_MAX_WINDOWS, DEFAULT_MAX_WINDOWS)
+                if (activeCount >= maxWindows) {
+                    android.widget.Toast.makeText(
+                        this,
+                        "Maksimal $maxWindows floating window aktif. Tutup salah satu dulu.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return START_NOT_STICKY
+                }
+
                 val config = FreeformConfig()
                 val userId = intent.getIntExtra(Intent.EXTRA_USER, 0)
                 config.userId = if (userId < 0) Refine.unsafeCast<ContextHidden>(this).userId else userId
@@ -147,5 +160,8 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
         const val ACTION_CALL_INTENT = "com.sunshine.freeform.action.call.intent"
         const val ACTION_DESTROY_FREEFORM = "com.sunshine.freeform.action.destroy.freeform"
         const val EXTRA_DISPLAY_ID = "com.sunshine.freeform.action.intent.display.id"
+        const val PREFS_NAME = "freeform_settings"
+        const val PREF_MAX_WINDOWS = "max_freeform_windows"
+        const val DEFAULT_MAX_WINDOWS = 5
     }
 }

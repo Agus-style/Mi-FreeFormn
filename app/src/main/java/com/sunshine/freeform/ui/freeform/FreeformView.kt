@@ -1486,13 +1486,19 @@ class FreeformView(
         }
 
         override fun onTaskDisplayChanged(tId: Int, newDisplayId: Int) {
+            // Abaikan jika window sudah destroyed
+            if (isDestroy) return
+
             if (taskList.contains(tId) && isFloating && newDisplayId == Display.DEFAULT_DISPLAY) {
+                // Guard: jangan startService kalau sudah ada intent yang sama berjalan
+                if (config.intent == null) return
                 context.startService(Intent(context, FreeformService::class.java).setAction(FreeformService.ACTION_START_INTENT).putExtra(Intent.EXTRA_INTENT, config.intent))
                 return
             }
             if (!taskList.contains(tId) && newDisplayId == virtualDisplay.display.displayId) taskList.add(tId)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Guard: hanya proses task milik virtual display ini, bukan task milik window lain
                 if (!isDestroy && taskList.contains(tId) && newDisplayId == Display.DEFAULT_DISPLAY) {
                     if (config.useSuiRefuseToFullScreen)
                         activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
@@ -1501,6 +1507,7 @@ class FreeformView(
                             Intent(context, FreeformService::class.java)
                                 .setAction(FreeformService.ACTION_CALL_INTENT)
                                 .putExtra(Intent.EXTRA_INTENT, config.intent)
+                                .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
                         )
                 }
             }
