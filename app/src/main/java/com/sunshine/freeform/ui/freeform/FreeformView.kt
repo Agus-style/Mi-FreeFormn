@@ -50,7 +50,7 @@ import kotlin.math.roundToInt
 class FreeformView(
     override var config: FreeformConfig,
     private val context: Context,
-    private var virtualDisplay: VirtualDisplay,
+    var virtualDisplay: VirtualDisplay,
     var screenListener: ScreenListener,
 ) : FreeformViewAbs(config), View.OnTouchListener, ScreenListener.ScreenStateListener {
 
