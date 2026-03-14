@@ -846,10 +846,28 @@ class FreeformView(
             R.id.middleView -> {
                 middleGestureDetector.onTouchEvent(event)
                 notifyToFloat()
+                // Resize VirtualDisplay supaya konten app mengisi ukuran window yang baru
+                if (isZoomOut) {
+                    freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
+                    freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
+                    resizeVirtualDisplay()
+                    scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
+                    scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
+                    isZoomOut = false
+                }
             }
             R.id.sideView -> {
                 notifyToFloat()
                 middleGestureDetector.onTouchEvent(event)
+                // Resize VirtualDisplay supaya konten app mengisi ukuran window yang baru
+                if (isZoomOut) {
+                    freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
+                    freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
+                    resizeVirtualDisplay()
+                    scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
+                    scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
+                    isZoomOut = false
+                }
             }
         }
         touchId = -1
