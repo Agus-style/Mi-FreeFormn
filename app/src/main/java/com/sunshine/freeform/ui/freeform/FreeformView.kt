@@ -228,6 +228,9 @@ class FreeformView(
                     VIRTUAL_DISPLAY_ROTATION_PORTRAIT
                 }
                 onFreeFormRotationChanged()
+            } else {
+                // Double tap pada bar bawah → suspend/mini mode
+                toSuspendMode()
             }
             return false
         }
@@ -671,6 +674,20 @@ class FreeformView(
         initFloatViewSize()
 
         refreshFreeformSize()
+
+        // Restore ukuran yang disimpan per orientasi
+        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+            if (savedWidthPortrait > 0) {
+                freeformWidth = savedWidthPortrait
+                freeformHeight = savedHeightPortrait
+            }
+        } else {
+            if (savedWidthLandscape > 0) {
+                freeformWidth = savedWidthLandscape
+                freeformHeight = savedHeightLandscape
+            }
+        }
+
         initFloatBar()
 
         val location = genFloatViewLocation()
@@ -846,26 +863,40 @@ class FreeformView(
             R.id.middleView -> {
                 middleGestureDetector.onTouchEvent(event)
                 notifyToFloat()
-                // Resize VirtualDisplay supaya konten app mengisi ukuran window yang baru
                 if (isZoomOut) {
+                    // Update virtualDisplay sesuai ukuran baru
                     freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
                     freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
                     resizeVirtualDisplay()
                     scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
                     scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
+                    // Simpan ukuran untuk remember size
+                    if (FreeformHelper.screenIsPortrait(screenRotation)) {
+                        savedWidthPortrait = freeformWidth
+                        savedHeightPortrait = freeformHeight
+                    } else {
+                        savedWidthLandscape = freeformWidth
+                        savedHeightLandscape = freeformHeight
+                    }
                     isZoomOut = false
                 }
             }
             R.id.sideView -> {
                 notifyToFloat()
                 middleGestureDetector.onTouchEvent(event)
-                // Resize VirtualDisplay supaya konten app mengisi ukuran window yang baru
                 if (isZoomOut) {
                     freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
                     freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
                     resizeVirtualDisplay()
                     scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
                     scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
+                    if (FreeformHelper.screenIsPortrait(screenRotation)) {
+                        savedWidthPortrait = freeformWidth
+                        savedHeightPortrait = freeformHeight
+                    } else {
+                        savedWidthLandscape = freeformWidth
+                        savedHeightLandscape = freeformHeight
+                    }
                     isZoomOut = false
                 }
             }
@@ -1381,6 +1412,108 @@ class FreeformView(
             return true
         }
     })
+
+    // ---- Fitur dari eswd04 ----
+
+    // Remember size per orientasi
+    private var savedWidthPortrait = -1
+    private var savedHeightPortrait = -1
+    private var savedWidthLandscape = -1
+    private var savedHeightLandscape = -1
+
+    // Suspend/mini mode
+    private var isSuspend = false
+    private var suspendTempWidth = -1
+    private var suspendTempHeight = -1
+    private val SUSPEND_HEIGHT = 192 * 2
+    private val SUSPEND_DISTANCE = 50
+
+    // Simpan ukuran sebelum suspend
+    private fun saveSizeBeforeSuspend() {
+        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+            savedWidthPortrait = freeformWidth
+            savedHeightPortrait = freeformHeight
+        } else {
+            savedWidthLandscape = freeformWidth
+            savedHeightLandscape = freeformHeight
+        }
+        suspendTempWidth = freeformWidth
+        suspendTempHeight = freeformHeight
+    }
+
+    // Restore ukuran setelah suspend
+    private fun restoreSizeAfterSuspend() {
+        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+            if (savedWidthPortrait > 0) {
+                freeformWidth = savedWidthPortrait
+                freeformHeight = savedHeightPortrait
+            }
+        } else {
+            if (savedWidthLandscape > 0) {
+                freeformWidth = savedWidthLandscape
+                freeformHeight = savedHeightLandscape
+            }
+        }
+    }
+
+    // Suspend ke pojok kanan atas
+    private fun toSuspendMode() {
+        if (isSuspend) {
+            // Sudah suspend → restore
+            isSuspend = false
+            restoreSizeAfterSuspend()
+            mScaleX = freeformWidth / rootWidth.toFloat()
+            mScaleY = freeformHeight / rootHeight.toFloat()
+            windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                width = rootWidth
+                height = rootHeight
+            })
+            return
+        }
+        isSuspend = true
+        saveSizeBeforeSuspend()
+
+        val isLandscape = freeformWidth > freeformHeight
+        val suspendW: Int
+        val suspendH: Int
+        if (isLandscape) {
+            suspendW = SUSPEND_HEIGHT
+            suspendH = suspendW * 9 / 16
+        } else {
+            suspendH = SUSPEND_HEIGHT
+            suspendW = suspendH * 9 / 16
+        }
+
+        freeformWidth = suspendW
+        freeformHeight = suspendH
+        mScaleX = freeformWidth / rootWidth.toFloat()
+        mScaleY = freeformHeight / rootHeight.toFloat()
+
+        // Geser ke pojok kanan atas
+        val targetX = (realScreenWidth - suspendW) / 2 - SUSPEND_DISTANCE
+        val targetY = (suspendH - realScreenHeight) / 2 + SUSPEND_DISTANCE
+
+        windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+            width = rootWidth
+            height = rootHeight
+            x = targetX
+            y = targetY
+        })
+    }
+
+    // Destroy dengan animasi fade out
+    fun destroyWithAnim() {
+        if (isDestroy) return
+        scope.launch(Dispatchers.Main) {
+            binding.root.animate()
+                .alpha(0f)
+                .setDuration(150)
+                .withEndAction {
+                    destroy()
+                }
+                .start()
+        }
+    }
 
     override fun destroy() {
         if (viewModel.getBooleanSp("remember_freeform_position", false)) {
