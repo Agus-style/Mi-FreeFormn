@@ -356,6 +356,56 @@ class FreeformView(
         enableSuspendMode = viewModel.getBooleanSp("enable_suspend_mode", true)
         enableDestroyAnim = viewModel.getBooleanSp("enable_destroy_anim", true)
         rememberFreeformSize = viewModel.getBooleanSp("remember_freeform_size", true)
+
+        // Gesture tambahan
+        enableSwipeHome = viewModel.getBooleanSp("enable_swipe_home", false)
+        enableSwipeForward = viewModel.getBooleanSp("enable_swipe_forward", false)
+        enablePinchResize = viewModel.getBooleanSp("enable_pinch_resize", false)
+        enableShakeMinimize = viewModel.getBooleanSp("enable_shake_minimize", false)
+
+        // Tampilan
+        windowOpacity = viewModel.getIntSp("window_opacity", 100)
+        showTitleBar = viewModel.getBooleanSp("show_title_bar", false)
+        cornerRadiusValue = viewModel.getIntSp("corner_radius", -1).toFloat()
+
+        // Performa
+        autoCloseScreenOff = viewModel.getBooleanSp("auto_close_screen_off", false)
+        autoMinimizeOnCall = viewModel.getBooleanSp("auto_minimize_on_call", false)
+        isWindowLocked = viewModel.getBooleanSp("lock_window_position", false)
+
+        // Apply opacity ke window
+        if (windowOpacity < 100) {
+            binding.freeformRoot.alpha = windowOpacity / 100f
+        }
+
+        // Apply corner radius
+        if (cornerRadiusValue > 0) {
+            binding.cardRoot.radius = cornerRadiusValue
+        }
+
+        // Setup shake sensor
+        if (enableShakeMinimize) {
+            sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
+            accelerometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+            sensorManager?.registerListener(shakeListener, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_NORMAL)
+        }
+
+        // Setup auto minimize on call
+        if (autoMinimizeOnCall) {
+            phoneCallReceiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(ctx: android.content.Context, intent: Intent) {
+                    val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
+                    if (state == android.telephony.TelephonyManager.EXTRA_STATE_RINGING ||
+                        state == android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK) {
+                        scope.launch(Dispatchers.Main) {
+                            if (!isFloating) floatViewToMiniView()
+                        }
+                    }
+                }
+            }
+            val filter = android.content.IntentFilter(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            context.registerReceiver(phoneCallReceiver, filter)
+        }
     }
 
     private fun initFloatViewSize() {
@@ -489,6 +539,10 @@ class FreeformView(
     }
 
     override fun onScreenOff() {
+        if (autoCloseScreenOff) {
+            scope.launch(Dispatchers.Main) { destroyWithAnim() }
+            return
+        }
         if (!isHidden) {
             windowLayoutParams.flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -1211,15 +1265,17 @@ class FreeformView(
                     hangUpGestureDetector.onTouchEvent(event)
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    movedX = event.rawX - moveStartX
-                    movedY = event.rawY - moveStartY
-                    isMoved = true
-                    windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
-                        x += movedX.toInt()
-                        y += movedY.toInt()
-                    })
-                    moveStartX = event.rawX
-                    moveStartY = event.rawY
+                    if (!isWindowLocked) {
+                        movedX = event.rawX - moveStartX
+                        movedY = event.rawY - moveStartY
+                        isMoved = true
+                        windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                            x += movedX.toInt()
+                            y += movedY.toInt()
+                        })
+                        moveStartX = event.rawX
+                        moveStartY = event.rawY
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isMoved) {
@@ -1428,6 +1484,58 @@ class FreeformView(
     private var enableDestroyAnim = true
     private var rememberFreeformSize = true
 
+    // Gesture tambahan
+    private var enableSwipeHome = false
+    private var enableSwipeForward = false
+    private var enablePinchResize = false
+    private var enableShakeMinimize = false
+
+    // Tampilan
+    private var windowOpacity = 100
+    private var showTitleBar = false
+    private var cornerRadiusValue = -1f // -1 = default
+
+    // Performa
+    private var autoCloseScreenOff = false
+    private var autoMinimizeOnCall = false
+    private var isWindowLocked = false
+
+    // Pinch to resize
+    private var pinchStartDistance = 0f
+    private var pinchStartWidth = 0
+    private var pinchStartHeight = 0
+    private var isPinching = false
+
+    // Shake to minimize
+    private var sensorManager: android.hardware.SensorManager? = null
+    private var accelerometer: android.hardware.Sensor? = null
+    private var lastShakeTime = 0L
+    private val SHAKE_THRESHOLD = 12f
+    private val SHAKE_INTERVAL = 1000L
+
+    private val shakeListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(event: android.hardware.SensorEvent) {
+            if (!enableShakeMinimize) return
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+            val acceleration = kotlin.math.sqrt((x*x + y*y + z*z).toDouble()).toFloat() - android.hardware.SensorManager.GRAVITY_EARTH
+            if (acceleration > SHAKE_THRESHOLD) {
+                val now = System.currentTimeMillis()
+                if (now - lastShakeTime > SHAKE_INTERVAL) {
+                    lastShakeTime = now
+                    scope.launch(Dispatchers.Main) {
+                        if (!isFloating) floatViewToMiniView()
+                    }
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor, accuracy: Int) {}
+    }
+
+    // Phone call receiver untuk auto minimize
+    private var phoneCallReceiver: android.content.BroadcastReceiver? = null
+
     // Remember size per orientasi
     private var savedWidthPortrait = -1
     private var savedHeightPortrait = -1
@@ -1554,6 +1662,14 @@ class FreeformView(
         swipeIndicatorView?.let { runCatching { windowManager.removeView(it) } }
         swipeIndicatorView = null
 
+        // Cleanup sensor shake
+        runCatching { sensorManager?.unregisterListener(shakeListener) }
+        sensorManager = null
+
+        // Cleanup phone call receiver
+        runCatching { phoneCallReceiver?.let { context.unregisterReceiver(it) } }
+        phoneCallReceiver = null
+
         runCatching {
             windowManager.removeViewImmediate(binding.root)
             windowManager.removeViewImmediate(backgroundView)
@@ -1585,20 +1701,26 @@ class FreeformView(
     private fun showSwipeIndicator(fromLeft: Boolean) {
         if (swipeIndicatorView != null) return
         val iv = android.widget.ImageView(context)
-        iv.setImageResource(android.R.drawable.ic_media_previous)
-        iv.setColorFilter(android.graphics.Color.WHITE)
-        iv.alpha = 0f
-        iv.scaleX = if (fromLeft) 1f else -1f // flip untuk kanan
-        val size = (48 * context.resources.displayMetrics.density).toInt()
-        val bg = android.graphics.drawable.GradientDrawable()
-        bg.shape = android.graphics.drawable.GradientDrawable.OVAL
-        bg.setColor(0xAA000000.toInt())
-        iv.background = bg
-        iv.setPadding(12, 12, 12, 12)
 
+        // Garis vertikal hitam seperti sistem Android
+        val barWidth = (4 * context.resources.displayMetrics.density).toInt()
+        val barHeight = (48 * context.resources.displayMetrics.density).toInt()
+
+        val bg = android.graphics.drawable.GradientDrawable()
+        bg.shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+        bg.cornerRadius = barWidth / 2f
+
+        // Baca transparansi dari setting (0-100), default 80
+        val alpha = viewModel.getIntSp("swipe_back_indicator_alpha", 80)
+        val alphaInt = (alpha * 2.55f).toInt().coerceIn(0, 255)
+        bg.setColor(android.graphics.Color.argb(alphaInt, 0, 0, 0))
+        iv.background = bg
+        iv.alpha = 0f
+
+        val size = barWidth
         val lp = WindowManager.LayoutParams().apply {
-            width = size
-            height = size
+            width = size + (16 * context.resources.displayMetrics.density).toInt()
+            height = barHeight
             type = if (Settings.canDrawOverlays(context))
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -1607,13 +1729,12 @@ class FreeformView(
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            // Posisi di tengah vertikal floating window
-            x = windowLayoutParams.x + if (fromLeft) -(size / 2) else (windowLayoutParams.width - size / 2)
+            x = if (fromLeft) windowLayoutParams.x - (size / 2) else windowLayoutParams.x + windowLayoutParams.width - (size / 2)
             y = windowLayoutParams.y
         }
         runCatching {
             windowManager.addView(iv, lp)
-            iv.animate().alpha(0.9f).setDuration(150).start()
+            iv.animate().alpha(1f).setDuration(150).start()
             swipeIndicatorView = iv
         }
     }
@@ -1690,11 +1811,168 @@ class FreeformView(
         return false
     }
 
-    private inner class TouchListener : View.OnTouchListener {
+    // Swipe dari bawah → home
+    private var swipeHomeStartX = 0f
+    private var swipeHomeStartY = 0f
+    private var isSwipeHomeTracking = false
+    private val SWIPE_HOME_EDGE_HEIGHT = 60f
+    private val SWIPE_HOME_MIN_DISTANCE = 100f
+
+    private fun handleSwipeHomeGesture(event: MotionEvent): Boolean {
+        if (!enableSwipeHome) return false
+        val edgeHeight = SWIPE_HOME_EDGE_HEIGHT * context.resources.displayMetrics.density
+        val minDistance = SWIPE_HOME_MIN_DISTANCE * context.resources.displayMetrics.density
+        val viewHeight = binding.textureView.height.toFloat()
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                if (event.y >= viewHeight - edgeHeight) {
+                    swipeHomeStartX = event.x
+                    swipeHomeStartY = event.y
+                    isSwipeHomeTracking = true
+                } else isSwipeHomeTracking = false
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isSwipeHomeTracking) {
+                    val dy = swipeHomeStartY - event.y
+                    val dx = kotlin.math.abs(event.x - swipeHomeStartX)
+                    if (dy >= minDistance && dx <= 80f * context.resources.displayMetrics.density) {
+                        isSwipeHomeTracking = false
+                        performHomeKey()
+                        return true
+                    }
+                }
+                isSwipeHomeTracking = false
+            }
+            MotionEvent.ACTION_CANCEL -> isSwipeHomeTracking = false
+        }
+        return false
+    }
+
+    private fun performHomeKey() {
+        runCatching {
+            val downEvent = KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HOME, 0)
+            val upEvent = KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+                KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HOME, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                setDisplayIdMethod?.invoke(downEvent, virtualDisplay.display.displayId)
+                inputManager.injectInputEvent(downEvent, 0)
+                setDisplayIdMethod?.invoke(upEvent, virtualDisplay.display.displayId)
+                inputManager.injectInputEvent(upEvent, 0)
+            }
+        }
+    }
+
+    // Swipe dari kanan → forward
+    private var swipeForwardStartX = 0f
+    private var swipeForwardStartY = 0f
+    private var isSwipeForwardTracking = false
+    private val SWIPE_FORWARD_EDGE_WIDTH = 60f
+    private val SWIPE_FORWARD_MIN_DISTANCE = 100f
+
+    private fun handleSwipeForwardGesture(event: MotionEvent): Boolean {
+        if (!enableSwipeForward) return false
+        val edgeWidth = SWIPE_FORWARD_EDGE_WIDTH * context.resources.displayMetrics.density
+        val minDistance = SWIPE_FORWARD_MIN_DISTANCE * context.resources.displayMetrics.density
+        val viewWidth = binding.textureView.width.toFloat()
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                if (event.x >= viewWidth - edgeWidth) {
+                    swipeForwardStartX = event.x
+                    swipeForwardStartY = event.y
+                    isSwipeForwardTracking = true
+                } else isSwipeForwardTracking = false
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isSwipeForwardTracking) {
+                    val dx = swipeForwardStartX - event.x
+                    val dy = kotlin.math.abs(event.y - swipeForwardStartY)
+                    if (dx >= minDistance && dy <= 80f * context.resources.displayMetrics.density) {
+                        isSwipeForwardTracking = false
+                        performForwardKey()
+                        return true
+                    }
+                }
+                isSwipeForwardTracking = false
+            }
+            MotionEvent.ACTION_CANCEL -> isSwipeForwardTracking = false
+        }
+        return false
+    }
+
+    private fun performForwardKey() {
+        runCatching {
+            val downEvent = KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_FORWARD, 0)
+            val upEvent = KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+                KeyEvent.ACTION_UP, KeyEvent.KEYCODE_FORWARD, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                setDisplayIdMethod?.invoke(downEvent, virtualDisplay.display.displayId)
+                inputManager.injectInputEvent(downEvent, 0)
+                setDisplayIdMethod?.invoke(upEvent, virtualDisplay.display.displayId)
+                inputManager.injectInputEvent(upEvent, 0)
+            }
+        }
+    }
+
+    // Pinch to resize
+    private fun getPinchDistance(event: MotionEvent): Float {
+        val dx = event.getX(0) - event.getX(1)
+        val dy = event.getY(0) - event.getY(1)
+        return kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+    }
+
+    private fun handlePinchResize(event: MotionEvent): Boolean {
+        if (!enablePinchResize || isFloating) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount == 2) {
+                    pinchStartDistance = getPinchDistance(event)
+                    pinchStartWidth = freeformWidth
+                    pinchStartHeight = freeformHeight
+                    isPinching = true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isPinching && event.pointerCount == 2) {
+                    val currentDistance = getPinchDistance(event)
+                    val scale = currentDistance / pinchStartDistance
+                    val newWidth = (pinchStartWidth * scale).roundToInt()
+                    val newHeight = (pinchStartHeight * scale).roundToInt()
+                    if (newWidth in minFreeformWidth..maxFreeformWidth &&
+                        newHeight in minFreeformHeight..maxFreeformHeight) {
+                        freeformWidth = newWidth
+                        freeformHeight = newHeight
+                        mScaleX = freeformWidth / rootWidth.toFloat()
+                        mScaleY = freeformHeight / rootHeight.toFloat()
+                    }
+                    return true
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (isPinching) {
+                    isPinching = false
+                    // Apply resize ke VirtualDisplay
+                    freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
+                    freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
+                    resizeVirtualDisplay()
+                }
+            }
+        }
+        return false
+    }
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
-            // Cek swipe back dulu sebelum diteruskan ke app
+            // Cek pinch resize dulu
+            if (handlePinchResize(event)) return true
+            // Cek swipe back
             if (handleSwipeBackGesture(event)) return true
+            // Cek swipe home
+            if (handleSwipeHomeGesture(event)) return true
+            // Cek swipe forward
+            if (handleSwipeForwardGesture(event)) return true
             handleTouch(event)
             when(event.action) {
                 MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
@@ -1733,8 +2011,10 @@ class FreeformView(
     private inner class TouchListenerPreQ : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
-            // Cek swipe back dulu sebelum diteruskan ke app
+            if (handlePinchResize(event)) return true
             if (handleSwipeBackGesture(event)) return true
+            if (handleSwipeHomeGesture(event)) return true
+            if (handleSwipeForwardGesture(event)) return true
             handleTouch(event)
             when(event.action) {
                 MotionEvent.ACTION_DOWN -> touchId = R.id.textureView
