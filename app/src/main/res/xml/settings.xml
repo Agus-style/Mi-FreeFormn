@@ -27,6 +27,7 @@
             android:summary="@string/preference_start_by_recent_view_summary"
             app:iconSpaceReserved="false"/>
     </PreferenceCategory>
+
     <PreferenceCategory
         android:title="@string/category_freeform"
         app:iconSpaceReserved="false">
@@ -76,10 +77,29 @@
             android:max="100"
             app:showSeekBarValue="true" />
 
+        <!-- Batas maksimal floating window aktif -->
+        <SeekBarPreference
+            android:key="max_freeform_windows"
+            android:title="Max floating windows"
+            android:summary="Maximum number of active floating windows"
+            app:iconSpaceReserved="false"
+            app:defaultValue="5"
+            app:min="1"
+            android:max="10"
+            app:showSeekBarValue="true" />
+
         <SwitchPreference
             android:key="remember_freeform_position"
             android:title="@string/remember_position_title"
             android:summary="@string/remember_position_summary"
+            app:iconSpaceReserved="false"/>
+
+        <!-- Ingat ukuran window terakhir -->
+        <SwitchPreference
+            android:key="remember_freeform_size"
+            android:title="Remember freeform size"
+            android:summary="Remember the last size of floating window"
+            app:defaultValue="true"
             app:iconSpaceReserved="false"/>
 
         <SwitchPreference
@@ -94,12 +114,32 @@
             android:summary="@string/manual_adjust_freeform_rotation_summary"
             app:iconSpaceReserved="false"/>
 
-<!--        <SwitchPreference-->
-<!--            android:key="compatible_mode"-->
-<!--            android:title="@string/compatible_title"-->
-<!--            android:summary="@string/compatible_summary"-->
-<!--            app:iconSpaceReserved="false"/>-->
+        <!-- Swipe back gesture -->
+        <SwitchPreference
+            android:key="enable_swipe_back"
+            android:title="Swipe back gesture"
+            android:summary="Swipe from left edge to trigger back button"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"/>
+
+        <!-- Suspend/mini mode -->
+        <SwitchPreference
+            android:key="enable_suspend_mode"
+            android:title="Suspend mode"
+            android:summary="Double tap bottom bar to minimize window to corner"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"/>
+
+        <!-- Animasi destroy -->
+        <SwitchPreference
+            android:key="enable_destroy_anim"
+            android:title="Close animation"
+            android:summary="Fade out animation when closing floating window"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"/>
+
     </PreferenceCategory>
+
     <PreferenceCategory
         android:title="@string/category_floating"
         app:iconSpaceReserved="false">
@@ -133,6 +173,7 @@
             app:showSeekBarValue="true"/>
 
     </PreferenceCategory>
+
     <PreferenceCategory
         android:title="@string/category_notify"
         app:iconSpaceReserved="false">
