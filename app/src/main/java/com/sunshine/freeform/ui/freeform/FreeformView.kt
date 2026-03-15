@@ -230,7 +230,7 @@ class FreeformView(
                 onFreeFormRotationChanged()
             } else {
                 // Double tap pada bar bawah → suspend/mini mode
-                toSuspendMode()
+                if (enableSuspendMode) toSuspendMode()
             }
             return false
         }
@@ -325,7 +325,6 @@ class FreeformView(
             config.freeformDpi = tmpDpi
         }
 
-        //优化 QQ和微信也支持缩放了 q220917.1
         freeformScreenHeight = (min(realScreenHeight, realScreenWidth) / config.widthHeightRatio).roundToInt()
         freeformScreenWidth = (freeformScreenHeight * config.widthHeightRatio).roundToInt()
 
@@ -351,6 +350,12 @@ class FreeformView(
 
         config.useSuiRefuseToFullScreen = viewModel.getBooleanSp("use_sui_refuse_to_fullscreen", false)
         config.manualAdjustFreeformRotation = viewModel.getBooleanSp("manual_adjust_freeform_rotation", false)
+
+        // Baca setting baru
+        enableSwipeBack = viewModel.getBooleanSp("enable_swipe_back", true)
+        enableSuspendMode = viewModel.getBooleanSp("enable_suspend_mode", true)
+        enableDestroyAnim = viewModel.getBooleanSp("enable_destroy_anim", true)
+        rememberFreeformSize = viewModel.getBooleanSp("remember_freeform_size", true)
     }
 
     private fun initFloatViewSize() {
@@ -871,12 +876,14 @@ class FreeformView(
                     scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
                     scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
                     // Simpan ukuran untuk remember size
-                    if (FreeformHelper.screenIsPortrait(screenRotation)) {
-                        savedWidthPortrait = freeformWidth
-                        savedHeightPortrait = freeformHeight
-                    } else {
-                        savedWidthLandscape = freeformWidth
-                        savedHeightLandscape = freeformHeight
+                    if (rememberFreeformSize) {
+                        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+                            savedWidthPortrait = freeformWidth
+                            savedHeightPortrait = freeformHeight
+                        } else {
+                            savedWidthLandscape = freeformWidth
+                            savedHeightLandscape = freeformHeight
+                        }
                     }
                     isZoomOut = false
                 }
@@ -1415,6 +1422,12 @@ class FreeformView(
 
     // ---- Fitur dari eswd04 ----
 
+    // Setting baru dari preferences
+    private var enableSwipeBack = true
+    private var enableSuspendMode = true
+    private var enableDestroyAnim = true
+    private var rememberFreeformSize = true
+
     // Remember size per orientasi
     private var savedWidthPortrait = -1
     private var savedHeightPortrait = -1
@@ -1504,13 +1517,15 @@ class FreeformView(
     // Destroy dengan animasi fade out
     fun destroyWithAnim() {
         if (isDestroy) return
+        if (!enableDestroyAnim) {
+            destroy()
+            return
+        }
         scope.launch(Dispatchers.Main) {
             binding.root.animate()
                 .alpha(0f)
                 .setDuration(150)
-                .withEndAction {
-                    destroy()
-                }
+                .withEndAction { destroy() }
                 .start()
         }
     }
@@ -1630,6 +1645,7 @@ class FreeformView(
     }
 
     private fun handleSwipeBackGesture(event: MotionEvent): Boolean {
+        if (!enableSwipeBack) return false
         val edgeWidth = SWIPE_BACK_EDGE_WIDTH * context.resources.displayMetrics.density
         val minDistance = SWIPE_BACK_MIN_DISTANCE * context.resources.displayMetrics.density
         val maxVertical = SWIPE_BACK_MAX_VERTICAL * context.resources.displayMetrics.density
