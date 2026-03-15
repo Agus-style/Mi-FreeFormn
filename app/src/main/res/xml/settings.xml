@@ -122,6 +122,17 @@
             app:defaultValue="true"
             app:iconSpaceReserved="false"/>
 
+        <!-- Transparansi indikator swipe back -->
+        <SeekBarPreference
+            android:key="swipe_back_indicator_alpha"
+            android:title="Swipe back indicator opacity"
+            android:summary="Opacity of swipe back indicator bar (0=transparent, 100=opaque)"
+            app:iconSpaceReserved="false"
+            app:defaultValue="80"
+            app:min="0"
+            android:max="100"
+            app:showSeekBarValue="true"/>
+
         <!-- Suspend/mini mode -->
         <SwitchPreference
             android:key="enable_suspend_mode"
@@ -141,7 +152,91 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/category_floating"
+        android:title="Gesture"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreference
+            android:key="enable_swipe_home"
+            android:title="Swipe up = Home"
+            android:summary="Swipe up from bottom edge to go home"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="enable_swipe_forward"
+            android:title="Swipe left = Forward"
+            android:summary="Swipe from right edge to go forward"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="enable_pinch_resize"
+            android:title="Pinch to resize"
+            android:summary="Use two fingers to resize floating window"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="enable_shake_minimize"
+            android:title="Shake to minimize"
+            android:summary="Shake device to minimize floating window"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Appearance"
+        app:iconSpaceReserved="false">
+
+        <SeekBarPreference
+            android:key="window_opacity"
+            android:title="Window opacity"
+            android:summary="Transparency of floating window"
+            app:iconSpaceReserved="false"
+            app:defaultValue="100"
+            app:min="20"
+            android:max="100"
+            app:showSeekBarValue="true"/>
+
+        <SeekBarPreference
+            android:key="corner_radius"
+            android:title="Corner radius"
+            android:summary="Rounded corner size of floating window"
+            app:iconSpaceReserved="false"
+            app:defaultValue="0"
+            app:min="0"
+            android:max="50"
+            app:showSeekBarValue="true"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Performance"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreference
+            android:key="auto_close_screen_off"
+            android:title="Auto close on screen off"
+            android:summary="Close all floating windows when screen turns off"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="auto_minimize_on_call"
+            android:title="Auto minimize on call"
+            android:summary="Minimize floating window when phone call comes in"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="lock_window_position"
+            android:title="Lock window position"
+            android:summary="Prevent floating window from being moved"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+    </PreferenceCategory>
         app:iconSpaceReserved="false">
 
         <SwitchPreference
