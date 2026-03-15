@@ -1963,6 +1963,8 @@ class FreeformView(
         }
         return false
     }
+
+    private inner class TouchListener : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             // Cek pinch resize dulu
