@@ -233,6 +233,40 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:title="Utilities"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreference
+            android:key="snap_to_edge"
+            android:title="Snap to edge"
+            android:summary="Window automatically snaps to screen edge when released"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="enable_quick_notes"
+            android:title="Quick notes"
+            android:summary="Show a sticky note beside floating window"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="enable_focus_timer"
+            android:title="Focus timer (Pomodoro)"
+            android:summary="25 minute focus timer above floating window. Tap to start/stop"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+        <SwitchPreference
+            android:key="show_perf_overlay"
+            android:title="Performance overlay"
+            android:summary="Show RAM usage on floating window"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:title="@string/category_floating"
         app:iconSpaceReserved="false">
 
