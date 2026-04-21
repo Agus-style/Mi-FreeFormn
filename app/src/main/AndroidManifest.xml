@@ -10,9 +10,17 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_USER_PRESENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- Phone call permissions -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+    <!-- Sensor untuk shake to minimize -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Clipboard sync -->
+    <uses-permission android:name="android.permission.READ_CLIPBOARD" />
+    <!-- Auto reopen on boot sudah ada BOOT_COMPLETED -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".app.MiFreeform"
