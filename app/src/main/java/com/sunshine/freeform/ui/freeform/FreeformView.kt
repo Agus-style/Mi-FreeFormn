@@ -390,7 +390,7 @@ class FreeformView(
             sensorManager?.registerListener(shakeListener, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_NORMAL)
         }
 
-        // Setup auto minimize on call
+        // Setup auto minimize on call - pakai TelephonyCallback untuk Android 12+
         if (autoMinimizeOnCall) {
             phoneCallReceiver = object : android.content.BroadcastReceiver() {
                 override fun onReceive(ctx: android.content.Context, intent: Intent) {
@@ -398,14 +398,39 @@ class FreeformView(
                     if (state == android.telephony.TelephonyManager.EXTRA_STATE_RINGING ||
                         state == android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK) {
                         scope.launch(Dispatchers.Main) {
-                            if (!isFloating) floatViewToMiniView()
+                            if (!isFloating && !isDestroy) floatViewToMiniView()
+                        }
+                    } else if (state == android.telephony.TelephonyManager.EXTRA_STATE_IDLE) {
+                        // Telepon selesai → restore floating window
+                        scope.launch(Dispatchers.Main) {
+                            if (isFloating && !isDestroy) {
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                    if (isFloating && !isDestroy) moveToFirst()
+                                }, 1000)
+                            }
                         }
                     }
                 }
             }
-            val filter = android.content.IntentFilter(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-            context.registerReceiver(phoneCallReceiver, filter)
+            val filter = android.content.IntentFilter().apply {
+                addAction(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+                priority = android.content.IntentFilter.SYSTEM_HIGH_PRIORITY
+            }
+            runCatching { context.registerReceiver(phoneCallReceiver, filter) }
         }
+
+        // Quick Notes overlay
+        if (viewModel.getBooleanSp("enable_quick_notes", false)) {
+            initQuickNotesOverlay()
+        }
+
+        // Focus timer
+        if (viewModel.getBooleanSp("enable_focus_timer", false)) {
+            initFocusTimer()
+        }
+
+        // Performance overlay
+        initPerfOverlay()
     }
 
     private fun initFloatViewSize() {
@@ -1282,6 +1307,8 @@ class FreeformView(
                         val nowX = event.rawX
                         val nowY = event.rawY
                         val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
+                        // Snap to edge
+                        snapToEdge()
 
                         if (windowCoordinate[1] >= (realScreenHeight - screenPaddingY) / 2) {
                             destroy()
@@ -1670,6 +1697,20 @@ class FreeformView(
         runCatching { phoneCallReceiver?.let { context.unregisterReceiver(it) } }
         phoneCallReceiver = null
 
+        // Cleanup quick notes
+        runCatching { quickNotesView?.let { windowManager.removeView(it) } }
+        quickNotesView = null
+
+        // Cleanup focus timer
+        focusTimerJob?.cancel()
+        runCatching { focusTimerView?.let { windowManager.removeView(it) } }
+        focusTimerView = null
+
+        // Cleanup perf overlay
+        perfOverlayJob?.cancel()
+        runCatching { perfOverlayView?.let { windowManager.removeView(it) } }
+        perfOverlayView = null
+
         runCatching {
             windowManager.removeViewImmediate(binding.root)
             windowManager.removeViewImmediate(backgroundView)
@@ -1809,6 +1850,152 @@ class FreeformView(
             }
         }
         return false
+    }
+
+    // ===== QUICK NOTES =====
+    private var quickNotesView: View? = null
+
+    private fun initQuickNotesOverlay() {
+        val editText = android.widget.EditText(context).apply {
+            hint = "Quick notes..."
+            setBackgroundColor(0xEE1A1A1A.toInt())
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(0xFF888888.toInt())
+            setPadding(16, 16, 16, 16)
+            textSize = 12f
+        }
+        quickNotesView = editText
+        val lp = WindowManager.LayoutParams().apply {
+            width = (200 * context.resources.displayMetrics.density).toInt()
+            height = (120 * context.resources.displayMetrics.density).toInt()
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            format = PixelFormat.TRANSLUCENT
+            x = windowLayoutParams.x + windowLayoutParams.width + 10
+            y = windowLayoutParams.y
+        }
+        runCatching { windowManager.addView(quickNotesView, lp) }
+    }
+
+    // ===== FOCUS TIMER =====
+    private var focusTimerView: android.widget.TextView? = null
+    private var focusTimerJob: kotlinx.coroutines.Job? = null
+    private var focusTimeSeconds = 25 * 60
+    private var isFocusTimerRunning = false
+
+    private fun initFocusTimer() {
+        val tv = android.widget.TextView(context).apply {
+            text = "25:00"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 14f
+            setBackgroundColor(0xCC000000.toInt())
+            setPadding(16, 8, 16, 8)
+            setOnClickListener { toggleFocusTimer() }
+        }
+        focusTimerView = tv
+        val lp = WindowManager.LayoutParams().apply {
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            format = PixelFormat.TRANSLUCENT
+            x = windowLayoutParams.x
+            y = windowLayoutParams.y - 80
+        }
+        runCatching { windowManager.addView(focusTimerView, lp) }
+    }
+
+    private fun toggleFocusTimer() {
+        if (isFocusTimerRunning) {
+            focusTimerJob?.cancel()
+            isFocusTimerRunning = false
+        } else {
+            isFocusTimerRunning = true
+            focusTimeSeconds = 25 * 60
+            focusTimerJob = scope.launch {
+                while (focusTimeSeconds > 0 && isFocusTimerRunning) {
+                    val min = focusTimeSeconds / 60
+                    val sec = focusTimeSeconds % 60
+                    withContext(Dispatchers.Main) {
+                        focusTimerView?.text = String.format("%02d:%02d", min, sec)
+                    }
+                    kotlinx.coroutines.delay(1000)
+                    focusTimeSeconds--
+                }
+                withContext(Dispatchers.Main) {
+                    focusTimerView?.text = "Done! 🎉"
+                    isFocusTimerRunning = false
+                }
+            }
+        }
+    }
+
+    // ===== SNAP TO EDGE =====
+    private fun snapToEdge() {
+        if (!viewModel.getBooleanSp("snap_to_edge", true)) return
+        val targetX = if (windowLayoutParams.x < 0) {
+            (realScreenWidth / -2) + (windowLayoutParams.width / 2) - screenPaddingX
+        } else {
+            (realScreenWidth / 2) - (windowLayoutParams.width / 2) + screenPaddingX
+        }
+        ValueAnimator.ofInt(windowLayoutParams.x, targetX).apply {
+            duration = 200
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener {
+                runCatching {
+                    windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                        x = it.animatedValue as Int
+                    })
+                }
+            }
+            start()
+        }
+    }
+
+    // ===== PERFORMANCE OVERLAY =====
+    private var perfOverlayView: android.widget.TextView? = null
+    private var perfOverlayJob: kotlinx.coroutines.Job? = null
+
+    private fun initPerfOverlay() {
+        if (!viewModel.getBooleanSp("show_perf_overlay", false)) return
+        val tv = android.widget.TextView(context).apply {
+            setTextColor(android.graphics.Color.GREEN)
+            textSize = 10f
+            setBackgroundColor(0x88000000.toInt())
+            setPadding(8, 4, 8, 4)
+        }
+        perfOverlayView = tv
+        val lp = WindowManager.LayoutParams().apply {
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            type = if (Settings.canDrawOverlays(context))
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            format = PixelFormat.TRANSLUCENT
+            x = windowLayoutParams.x + windowLayoutParams.width - 100
+            y = windowLayoutParams.y
+        }
+        runCatching { windowManager.addView(perfOverlayView, lp) }
+        perfOverlayJob = scope.launch {
+            val runtime = Runtime.getRuntime()
+            while (!isDestroy) {
+                val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+                val totalMem = runtime.totalMemory() / 1024 / 1024
+                withContext(Dispatchers.Main) {
+                    perfOverlayView?.text = "RAM: ${usedMem}/${totalMem}MB"
+                }
+                kotlinx.coroutines.delay(2000)
+            }
+        }
     }
 
     // Swipe dari bawah → home
