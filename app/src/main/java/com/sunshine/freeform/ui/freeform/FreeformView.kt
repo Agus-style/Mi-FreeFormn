@@ -2252,41 +2252,52 @@ class FreeformView(
         override fun onTaskRemoved(taskId: Int) {
             if (isDestroy) return
             taskList.remove(taskId)
+            // Kalau semua task habis → destroy window
+            if (taskList.isEmpty()) {
+                scope.launch(Dispatchers.Main) {
+                    kotlinx.coroutines.delay(500) // delay kecil biar tidak false positive
+                    if (!isDestroy && taskList.isEmpty()) destroy()
+                }
+            }
         }
 
         override fun onTaskRemovalStarted(taskInfo: ActivityManager.RunningTaskInfo) {
             if (isDestroy) return
-            if (taskList.contains(taskInfo.taskId)) {
-                scope.launch(Dispatchers.Main) { destroy() }
-            }
+            // JANGAN destroy langsung! Hanya remove dari list
+            // Destroy hanya kalau semua task benar-benar habis (handle di onTaskRemoved)
+            taskList.remove(taskInfo.taskId)
         }
 
         override fun onTaskDisplayChanged(tId: Int, newDisplayId: Int) {
             if (isDestroy) return
 
-            // Sama persis seperti original — kalau task milik kita dan window floating
-            // dan task kabur ke default display → startService ACTION_START_INTENT
-            // Di multi-window, ini akan trigger moveToFirst() untuk window yang sama
-            if (taskList.contains(tId) && isFloating && newDisplayId == Display.DEFAULT_DISPLAY) {
-                context.startService(
-                    Intent(context, FreeformService::class.java)
-                        .setAction(FreeformService.ACTION_START_INTENT)
-                        .putExtra(Intent.EXTRA_INTENT, config.intent)
-                )
+            // Task masuk ke virtual display kita → track
+            if (newDisplayId == virtualDisplay.display.displayId) {
+                if (!taskList.contains(tId)) taskList.add(tId)
                 return
             }
 
-            // Track task masuk ke virtual display kita
-            if (!taskList.contains(tId) && newDisplayId == virtualDisplay.display.displayId) {
-                taskList.add(tId)
-            }
+            // Task bukan milik kita → abaikan
+            if (!taskList.contains(tId)) return
 
-            // Task milik kita kabur ke default display saat window aktif (bukan floating)
-            // Paksa balik atau relaunch
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (!isDestroy && taskList.contains(tId) && newDisplayId == Display.DEFAULT_DISPLAY) {
+            // Task milik kita pindah ke default display
+            if (newDisplayId == Display.DEFAULT_DISPLAY) {
+                // Kalau window sedang floating/minimize → trigger moveToFirst
+                if (isFloating) {
+                    context.startService(
+                        Intent(context, FreeformService::class.java)
+                            .setAction(FreeformService.ACTION_START_INTENT)
+                            .putExtra(Intent.EXTRA_INTENT, config.intent)
+                    )
+                    return
+                }
+
+                // Window aktif tapi task kabur → paksa balik
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     if (config.useSuiRefuseToFullScreen) {
-                        activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
+                        runCatching {
+                            activityTaskManager.moveRootTaskToDisplay(tId, virtualDisplay.display.displayId)
+                        }
                     } else {
                         context.startService(
                             Intent(context, FreeformService::class.java)
