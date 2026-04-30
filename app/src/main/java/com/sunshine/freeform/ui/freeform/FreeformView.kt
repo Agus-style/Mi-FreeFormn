@@ -250,55 +250,137 @@ class FreeformView(
 
     private val sharedPreferencesChangeListener =
         OnSharedPreferenceChangeListener { sharedPreferences, key ->
-            if (key.equals("freeform_float_view_size")) {
-                config.floatViewSize = (sharedPreferences.getInt(key, 20)) / 100.toFloat()
-                hangUpViewHeight = (realScreenHeight * config.floatViewSize).roundToInt()
-                hangUpViewWidth = (hangUpViewHeight * config.widthHeightRatio).roundToInt()
-                if (isFloating) {
-                    if (isHidden) {
-                        hiddenViewToFloatView(false)
-                    }
+            when (key) {
+                "freeform_float_view_size" -> {
+                    config.floatViewSize = (sharedPreferences.getInt(key, 20)) / 100.toFloat()
+                    hangUpViewHeight = (realScreenHeight * config.floatViewSize).roundToInt()
+                    hangUpViewWidth = (hangUpViewHeight * config.widthHeightRatio).roundToInt()
+                    if (isFloating) {
+                        if (isHidden) {
+                            hiddenViewToFloatView(false)
+                        }
 
-                    binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius) * (hangUpViewWidth / rootWidth)
+                        binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius) * (hangUpViewWidth / rootWidth)
 
-                    val windowCoordinate = intArrayOf(
-                        windowLayoutParams.x,
-                        windowLayoutParams.y,
-                    )
-
-                    val location = genFloatViewLocation()
-                    lastFloatViewLocation[0] = location[0]
-
-                    AnimatorSet().apply {
-                        playTogether(
-                            ValueAnimator.ofInt(windowLayoutParams.width, hangUpViewWidth)
-                                .apply {
-                                    addUpdateListener {
-                                        windowManager.updateViewLayout(
-                                            binding.root,
-                                            windowLayoutParams.apply {
-                                                width = it.animatedValue as Int
-                                            })
-                                    }
-                                },
-                            ValueAnimator.ofInt(windowLayoutParams.height, hangUpViewHeight)
-                                .apply {
-                                    addUpdateListener {
-                                        windowManager.updateViewLayout(
-                                            binding.root,
-                                            windowLayoutParams.apply {
-                                                height = it.animatedValue as Int
-                                            })
-                                    }
-                                },
-                            moveViewAnim(windowCoordinate, lastFloatViewLocation)
+                        val windowCoordinate = intArrayOf(
+                            windowLayoutParams.x,
+                            windowLayoutParams.y,
                         )
-                        duration = 200
-                        start()
+
+                        val location = genFloatViewLocation()
+                        lastFloatViewLocation[0] = location[0]
+
+                        AnimatorSet().apply {
+                            playTogether(
+                                ValueAnimator.ofInt(windowLayoutParams.width, hangUpViewWidth)
+                                    .apply {
+                                        addUpdateListener {
+                                            windowManager.updateViewLayout(
+                                                binding.root,
+                                                windowLayoutParams.apply {
+                                                    width = it.animatedValue as Int
+                                                })
+                                        }
+                                    },
+                                ValueAnimator.ofInt(windowLayoutParams.height, hangUpViewHeight)
+                                    .apply {
+                                        addUpdateListener {
+                                            windowManager.updateViewLayout(
+                                                binding.root,
+                                                windowLayoutParams.apply {
+                                                    height = it.animatedValue as Int
+                                                })
+                                        }
+                                    },
+                                moveViewAnim(windowCoordinate, lastFloatViewLocation)
+                            )
+                            duration = 200
+                            start()
+                        }
                     }
                 }
-            } else {
-                initConfig()
+                "window_opacity" -> {
+                    windowOpacity = sharedPreferences.getInt(key, 100)
+                    binding.freeformRoot.alpha = windowOpacity / 100f
+                }
+                "corner_radius" -> {
+                    cornerRadiusValue = sharedPreferences.getInt(key, 0).toFloat()
+                    if (cornerRadiusValue > 0) {
+                        binding.cardRoot.radius = cornerRadiusValue
+                    } else {
+                        binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius)
+                    }
+                }
+                "lock_window_position" -> {
+                    isWindowLocked = sharedPreferences.getBoolean(key, false)
+                }
+                "auto_close_screen_off" -> {
+                    autoCloseScreenOff = sharedPreferences.getBoolean(key, false)
+                }
+                "auto_minimize_on_call" -> {
+                    autoMinimizeOnCall = sharedPreferences.getBoolean(key, false)
+                    if (autoMinimizeOnCall) {
+                        registerPhoneCallReceiver()
+                    } else {
+                        unregisterPhoneCallReceiver()
+                    }
+                }
+                "enable_quick_notes" -> {
+                    if (sharedPreferences.getBoolean(key, false)) {
+                        initQuickNotesOverlay()
+                    } else {
+                        removeQuickNotesOverlay()
+                    }
+                }
+                "enable_focus_timer" -> {
+                    if (sharedPreferences.getBoolean(key, false)) {
+                        initFocusTimer()
+                    } else {
+                        removeFocusTimer()
+                    }
+                }
+                "show_perf_overlay" -> {
+                    if (sharedPreferences.getBoolean(key, false)) {
+                        initPerfOverlay()
+                    } else {
+                        removePerfOverlay()
+                    }
+                }
+                "enable_shake_minimize" -> {
+                    enableShakeMinimize = sharedPreferences.getBoolean(key, false)
+                    if (enableShakeMinimize) {
+                        registerShakeListener()
+                    } else {
+                        unregisterShakeListener()
+                    }
+                }
+                "enable_swipe_back" -> {
+                    enableSwipeBack = sharedPreferences.getBoolean(key, true)
+                }
+                "enable_swipe_home" -> {
+                    enableSwipeHome = sharedPreferences.getBoolean(key, false)
+                }
+                "enable_swipe_forward" -> {
+                    enableSwipeForward = sharedPreferences.getBoolean(key, false)
+                }
+                "enable_pinch_resize" -> {
+                    enablePinchResize = sharedPreferences.getBoolean(key, false)
+                }
+                "remember_freeform_size" -> {
+                    rememberFreeformSize = sharedPreferences.getBoolean(key, true)
+                }
+                "enable_suspend_mode" -> {
+                    enableSuspendMode = sharedPreferences.getBoolean(key, true)
+                }
+                "enable_destroy_anim" -> {
+                    enableDestroyAnim = sharedPreferences.getBoolean(key, true)
+                }
+                "snap_to_edge" -> {
+                    // Snap to edge diatur saat move selesai
+                }
+                else -> {
+                    initConfig()
+                }
             }
         }
 
@@ -368,85 +450,12 @@ class FreeformView(
 
         // Tampilan
         windowOpacity = viewModel.getIntSp("window_opacity", 100)
-        showTitleBar = viewModel.getBooleanSp("show_title_bar", false)
-        cornerRadiusValue = viewModel.getIntSp("corner_radius", -1).toFloat()
+        cornerRadiusValue = viewModel.getIntSp("corner_radius", 0).toFloat()
 
         // Performa
         autoCloseScreenOff = viewModel.getBooleanSp("auto_close_screen_off", false)
         autoMinimizeOnCall = viewModel.getBooleanSp("auto_minimize_on_call", false)
         isWindowLocked = viewModel.getBooleanSp("lock_window_position", false)
-
-        // Apply opacity ke window
-        if (windowOpacity < 100) {
-            binding.freeformRoot.alpha = windowOpacity / 100f
-        }
-
-        // Apply corner radius
-        if (cornerRadiusValue > 0) {
-            binding.cardRoot.radius = cornerRadiusValue
-        }
-
-        // Setup shake sensor
-        if (enableShakeMinimize) {
-            sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
-            accelerometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
-            sensorManager?.registerListener(shakeListener, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_NORMAL)
-        }
-
-        // Setup auto minimize on call - pakai TelephonyCallback untuk Android 12+
-        if (autoMinimizeOnCall) {
-            phoneCallReceiver = object : android.content.BroadcastReceiver() {
-                override fun onReceive(ctx: android.content.Context, intent: Intent) {
-                    val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
-                    if (state == android.telephony.TelephonyManager.EXTRA_STATE_RINGING ||
-                        state == android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK) {
-                        scope.launch(Dispatchers.Main) {
-                            if (!isFloating && !isDestroy) floatViewToMiniView()
-                        }
-                    } else if (state == android.telephony.TelephonyManager.EXTRA_STATE_IDLE) {
-                        // Telepon selesai → restore floating window
-                        scope.launch(Dispatchers.Main) {
-                            if (isFloating && !isDestroy) {
-                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                    if (isFloating && !isDestroy) moveToFirst()
-                                }, 1000)
-                            }
-                        }
-                    }
-                }
-            }
-            val filter = android.content.IntentFilter().apply {
-                addAction(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-                priority = android.content.IntentFilter.SYSTEM_HIGH_PRIORITY
-            }
-            runCatching { context.registerReceiver(phoneCallReceiver, filter) }
-        }
-
-        // Quick Notes overlay
-        if (viewModel.getBooleanSp("enable_quick_notes", false)) {
-            initQuickNotesOverlay()
-        }
-
-        // Focus timer
-        if (viewModel.getBooleanSp("enable_focus_timer", false)) {
-            initFocusTimer()
-        }
-
-        // Performance overlay
-        initPerfOverlay()
-    }
-
-    private fun initFloatViewSize() {
-        hangUpViewHeight = (rootHeight * config.floatViewSize).roundToInt()
-        hangUpViewWidth = (hangUpViewHeight * config.widthHeightRatio).roundToInt()
-        if (virtualDisplayRotation == VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) {
-            hangUpViewWidth = (realScreenHeight * config.floatViewSize).roundToInt()
-            hangUpViewHeight = (hangUpViewWidth * config.widthHeightRatio).roundToInt()
-            if (!FreeformHelper.screenIsPortrait(screenRotation)) {
-                hangUpViewWidth = (realScreenWidth * config.floatViewSize).roundToInt()
-                hangUpViewHeight = (hangUpViewWidth * config.widthHeightRatio).roundToInt()
-            }
-        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -490,6 +499,15 @@ class FreeformView(
         initFloatBar()
 
         resetScale()
+
+        // Apply tampilan awal
+        if (windowOpacity < 100) {
+            binding.freeformRoot.alpha = windowOpacity / 100f
+        }
+        
+        if (cornerRadiusValue > 0) {
+            binding.cardRoot.radius = cornerRadiusValue
+        }
 
         binding.freeformRoot.alpha = 1f
         binding.textureView.alpha = 0f
@@ -635,6 +653,36 @@ class FreeformView(
         initDisplay()
         initOrientationChangedListener()
         initTextureViewListener()
+
+        // Apply ke view sebelum ditampilkan
+        if (windowOpacity < 100) {
+            binding.freeformRoot.alpha = windowOpacity / 100f
+        }
+        
+        if (cornerRadiusValue > 0) {
+            binding.cardRoot.radius = cornerRadiusValue
+        }
+
+        // Setup overlay tambahan
+        if (viewModel.getBooleanSp("enable_quick_notes", false)) {
+            initQuickNotesOverlay()
+        }
+
+        if (viewModel.getBooleanSp("enable_focus_timer", false)) {
+            initFocusTimer()
+        }
+
+        initPerfOverlay()
+
+        // Setup shake sensor
+        if (enableShakeMinimize) {
+            registerShakeListener()
+        }
+
+        // Setup auto minimize on call
+        if (autoMinimizeOnCall) {
+            registerPhoneCallReceiver()
+        }
 
         // Baca setting tap outside to close
         val tapOutsideToClose = viewModel.getBooleanSp("tap_outside_to_close", false)
@@ -984,12 +1032,14 @@ class FreeformView(
                     resizeVirtualDisplay()
                     scaleX = (rootWidth - cardWidthMargin) / freeformScreenWidth.toFloat()
                     scaleY = (rootHeight - cardHeightMargin) / freeformScreenHeight.toFloat()
-                    if (FreeformHelper.screenIsPortrait(screenRotation)) {
-                        savedWidthPortrait = freeformWidth
-                        savedHeightPortrait = freeformHeight
-                    } else {
-                        savedWidthLandscape = freeformWidth
-                        savedHeightLandscape = freeformHeight
+                    if (rememberFreeformSize) {
+                        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+                            savedWidthPortrait = freeformWidth
+                            savedHeightPortrait = freeformHeight
+                        } else {
+                            savedWidthLandscape = freeformWidth
+                            savedHeightLandscape = freeformHeight
+                        }
                     }
                     isZoomOut = false
                 }
@@ -1316,7 +1366,9 @@ class FreeformView(
                         val nowY = event.rawY
                         val windowCoordinate = intArrayOf(windowLayoutParams.x, windowLayoutParams.y)
                         // Snap to edge
-                        snapToEdge()
+                        if (viewModel.getBooleanSp("snap_to_edge", true)) {
+                            snapToEdge()
+                        }
 
                         if (windowCoordinate[1] >= (realScreenHeight - screenPaddingY) / 2) {
                             destroy()
@@ -1527,8 +1579,7 @@ class FreeformView(
 
     // Tampilan
     private var windowOpacity = 100
-    private var showTitleBar = false
-    private var cornerRadiusValue = -1f // -1 = default
+    private var cornerRadiusValue = 0f
 
     // Performa
     private var autoCloseScreenOff = false
@@ -1568,8 +1619,52 @@ class FreeformView(
         override fun onAccuracyChanged(sensor: android.hardware.Sensor, accuracy: Int) {}
     }
 
+    private fun registerShakeListener() {
+        sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
+        accelerometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        sensorManager?.registerListener(shakeListener, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_NORMAL)
+    }
+
+    private fun unregisterShakeListener() {
+        runCatching { sensorManager?.unregisterListener(shakeListener) }
+        sensorManager = null
+    }
+
     // Phone call receiver untuk auto minimize
     private var phoneCallReceiver: android.content.BroadcastReceiver? = null
+
+    private fun registerPhoneCallReceiver() {
+        phoneCallReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: android.content.Context, intent: Intent) {
+                val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
+                if (state == android.telephony.TelephonyManager.EXTRA_STATE_RINGING ||
+                    state == android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK) {
+                    scope.launch(Dispatchers.Main) {
+                        if (!isFloating && !isDestroy) floatViewToMiniView()
+                    }
+                } else if (state == android.telephony.TelephonyManager.EXTRA_STATE_IDLE) {
+                    // Telepon selesai → restore floating window
+                    scope.launch(Dispatchers.Main) {
+                        if (isFloating && !isDestroy) {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                if (isFloating && !isDestroy) moveToFirst()
+                            }, 1000)
+                        }
+                    }
+                }
+            }
+        }
+        val filter = android.content.IntentFilter().apply {
+            addAction(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            priority = android.content.IntentFilter.SYSTEM_HIGH_PRIORITY
+        }
+        runCatching { context.registerReceiver(phoneCallReceiver, filter) }
+    }
+
+    private fun unregisterPhoneCallReceiver() {
+        runCatching { phoneCallReceiver?.let { context.unregisterReceiver(it) } }
+        phoneCallReceiver = null
+    }
 
     // Remember size per orientasi
     private var savedWidthPortrait = -1
@@ -1581,7 +1676,7 @@ class FreeformView(
     private var isSuspend = false
     private var suspendTempWidth = -1
     private var suspendTempHeight = -1
-    private val SUSPEND_HEIGHT = 192 * 2
+    private val SUSPEND_HEIGHT = 384 // 192 * 2
     private val SUSPEND_DISTANCE = 50
 
     // Simpan ukuran sebelum suspend
@@ -1634,10 +1729,10 @@ class FreeformView(
         val suspendH: Int
         if (isLandscape) {
             suspendW = SUSPEND_HEIGHT
-            suspendH = suspendW * 9 / 16
+            suspendH = (suspendW * 9 / 16)
         } else {
             suspendH = SUSPEND_HEIGHT
-            suspendW = suspendH * 9 / 16
+            suspendW = (suspendH * 9 / 16)
         }
 
         freeformWidth = suspendW
@@ -1698,26 +1793,19 @@ class FreeformView(
         swipeIndicatorView = null
 
         // Cleanup sensor shake
-        runCatching { sensorManager?.unregisterListener(shakeListener) }
-        sensorManager = null
+        unregisterShakeListener()
 
         // Cleanup phone call receiver
-        runCatching { phoneCallReceiver?.let { context.unregisterReceiver(it) } }
-        phoneCallReceiver = null
+        unregisterPhoneCallReceiver()
 
         // Cleanup quick notes
-        runCatching { quickNotesView?.let { windowManager.removeView(it) } }
-        quickNotesView = null
+        removeQuickNotesOverlay()
 
         // Cleanup focus timer
-        focusTimerJob?.cancel()
-        runCatching { focusTimerView?.let { windowManager.removeView(it) } }
-        focusTimerView = null
+        removeFocusTimer()
 
         // Cleanup perf overlay
-        perfOverlayJob?.cancel()
-        runCatching { perfOverlayView?.let { windowManager.removeView(it) } }
-        perfOverlayView = null
+        removePerfOverlay()
 
         runCatching {
             windowManager.removeViewImmediate(binding.root)
@@ -1864,6 +1952,7 @@ class FreeformView(
     private var quickNotesView: View? = null
 
     private fun initQuickNotesOverlay() {
+        removeQuickNotesOverlay()
         val editText = android.widget.EditText(context).apply {
             hint = "Quick notes..."
             setBackgroundColor(0xEE1A1A1A.toInt())
@@ -1888,6 +1977,11 @@ class FreeformView(
         runCatching { windowManager.addView(quickNotesView, lp) }
     }
 
+    private fun removeQuickNotesOverlay() {
+        runCatching { quickNotesView?.let { windowManager.removeView(it) } }
+        quickNotesView = null
+    }
+
     // ===== FOCUS TIMER =====
     private var focusTimerView: android.widget.TextView? = null
     private var focusTimerJob: kotlinx.coroutines.Job? = null
@@ -1895,6 +1989,7 @@ class FreeformView(
     private var isFocusTimerRunning = false
 
     private fun initFocusTimer() {
+        removeFocusTimer()
         val tv = android.widget.TextView(context).apply {
             text = "25:00"
             setTextColor(android.graphics.Color.WHITE)
@@ -1917,6 +2012,13 @@ class FreeformView(
             y = windowLayoutParams.y - 80
         }
         runCatching { windowManager.addView(focusTimerView, lp) }
+    }
+
+    private fun removeFocusTimer() {
+        focusTimerJob?.cancel()
+        focusTimerJob = null
+        runCatching { focusTimerView?.let { windowManager.removeView(it) } }
+        focusTimerView = null
     }
 
     private fun toggleFocusTimer() {
@@ -1971,7 +2073,11 @@ class FreeformView(
     private var perfOverlayJob: kotlinx.coroutines.Job? = null
 
     private fun initPerfOverlay() {
-        if (!viewModel.getBooleanSp("show_perf_overlay", false)) return
+        if (!viewModel.getBooleanSp("show_perf_overlay", false)) {
+            removePerfOverlay()
+            return
+        }
+        removePerfOverlay()
         val tv = android.widget.TextView(context).apply {
             setTextColor(android.graphics.Color.GREEN)
             textSize = 10f
@@ -1995,7 +2101,7 @@ class FreeformView(
         runCatching { windowManager.addView(perfOverlayView, lp) }
         perfOverlayJob = scope.launch {
             val runtime = Runtime.getRuntime()
-            while (!isDestroy) {
+            while (isActive) {
                 val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
                 val totalMem = runtime.totalMemory() / 1024 / 1024
                 withContext(Dispatchers.Main) {
@@ -2004,6 +2110,13 @@ class FreeformView(
                 kotlinx.coroutines.delay(2000)
             }
         }
+    }
+
+    private fun removePerfOverlay() {
+        perfOverlayJob?.cancel()
+        perfOverlayJob = null
+        runCatching { perfOverlayView?.let { windowManager.removeView(it) } }
+        perfOverlayView = null
     }
 
     // Swipe dari bawah → home
@@ -2153,6 +2266,17 @@ class FreeformView(
                     freeformScreenWidth = (freeformWidth - cardWidthMargin).roundToInt()
                     freeformScreenHeight = (freeformHeight - cardHeightMargin).roundToInt()
                     resizeVirtualDisplay()
+                    
+                    // Simpan ukuran
+                    if (rememberFreeformSize) {
+                        if (FreeformHelper.screenIsPortrait(screenRotation)) {
+                            savedWidthPortrait = freeformWidth
+                            savedHeightPortrait = freeformHeight
+                        } else {
+                            savedWidthLandscape = freeformWidth
+                            savedHeightLandscape = freeformHeight
+                        }
+                    }
                 }
             }
         }
