@@ -230,6 +230,13 @@
             app:defaultValue="false"
             app:iconSpaceReserved="false"/>
 
+        <SwitchPreference
+            android:key="tap_outside_to_close"
+            android:title="Tap outside to close"
+            android:summary="Tap outside floating window to close it. Turn off to prevent accidental close"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false"/>
+
     </PreferenceCategory>
 
     <PreferenceCategory
