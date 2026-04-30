@@ -253,8 +253,7 @@ class FreeformView(
             when (key) {
                 "freeform_float_view_size" -> {
                     config.floatViewSize = (sharedPreferences.getInt(key, 20)) / 100.toFloat()
-                    hangUpViewHeight = (realScreenHeight * config.floatViewSize).roundToInt()
-                    hangUpViewWidth = (hangUpViewHeight * config.widthHeightRatio).roundToInt()
+                    initFloatViewSize()
                     if (isFloating) {
                         if (isHidden) {
                             hiddenViewToFloatView(false)
@@ -301,14 +300,18 @@ class FreeformView(
                 }
                 "window_opacity" -> {
                     windowOpacity = sharedPreferences.getInt(key, 100)
-                    binding.freeformRoot.alpha = windowOpacity / 100f
+                    if (::binding.isInitialized) {
+                        binding.freeformRoot.alpha = windowOpacity / 100f
+                    }
                 }
                 "corner_radius" -> {
                     cornerRadiusValue = sharedPreferences.getInt(key, 0).toFloat()
-                    if (cornerRadiusValue > 0) {
-                        binding.cardRoot.radius = cornerRadiusValue
-                    } else {
-                        binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius)
+                    if (::binding.isInitialized) {
+                        if (cornerRadiusValue > 0) {
+                            binding.cardRoot.radius = cornerRadiusValue
+                        } else {
+                            binding.cardRoot.radius = context.resources.getDimension(R.dimen.card_corner_radius)
+                        }
                     }
                 }
                 "lock_window_position" -> {
@@ -458,6 +461,22 @@ class FreeformView(
         isWindowLocked = viewModel.getBooleanSp("lock_window_position", false)
     }
 
+    /**
+     * Inisialisasi ukuran float view berdasarkan config.floatViewSize
+     */
+    private fun initFloatViewSize() {
+        hangUpViewHeight = (rootHeight * config.floatViewSize).roundToInt()
+        hangUpViewWidth = (hangUpViewHeight * config.widthHeightRatio).roundToInt()
+        if (virtualDisplayRotation == VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) {
+            hangUpViewWidth = (realScreenHeight * config.floatViewSize).roundToInt()
+            hangUpViewHeight = (hangUpViewWidth * config.widthHeightRatio).roundToInt()
+            if (!FreeformHelper.screenIsPortrait(screenRotation)) {
+                hangUpViewWidth = (realScreenWidth * config.floatViewSize).roundToInt()
+                hangUpViewHeight = (hangUpViewWidth * config.widthHeightRatio).roundToInt()
+            }
+        }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     fun initView() {
         binding = ViewFreeformFlymeBinding.bind(LayoutInflater.from(context).inflate(R.layout.view_freeform_flyme, null, false))
@@ -504,7 +523,7 @@ class FreeformView(
         if (windowOpacity < 100) {
             binding.freeformRoot.alpha = windowOpacity / 100f
         }
-        
+
         if (cornerRadiusValue > 0) {
             binding.cardRoot.radius = cornerRadiusValue
         }
@@ -577,7 +596,6 @@ class FreeformView(
 
     private fun initDisplay() {
         virtualDisplay.resize(freeformScreenWidth, freeformScreenHeight, config.freeformDpi)
-
         screenListener.addScreenStateListener(this@FreeformView)
     }
 
@@ -658,7 +676,7 @@ class FreeformView(
         if (windowOpacity < 100) {
             binding.freeformRoot.alpha = windowOpacity / 100f
         }
-        
+
         if (cornerRadiusValue > 0) {
             binding.cardRoot.radius = cornerRadiusValue
         }
@@ -2286,13 +2304,9 @@ class FreeformView(
     private inner class TouchListener : View.OnTouchListener {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouch(v: View, event: MotionEvent): Boolean {
-            // Cek pinch resize dulu
             if (handlePinchResize(event)) return true
-            // Cek swipe back
             if (handleSwipeBackGesture(event)) return true
-            // Cek swipe home
             if (handleSwipeHomeGesture(event)) return true
-            // Cek swipe forward
             if (handleSwipeForwardGesture(event)) return true
             handleTouch(event)
             when(event.action) {
@@ -2370,51 +2384,31 @@ class FreeformView(
         }
     }
 
-    // Anti-spam untuk onTaskDisplayChanged
-    private val TASK_DISPLAY_DEBOUNCE_MS = 1500L
-    private var pendingTaskDisplayJob: kotlinx.coroutines.Job? = null
-
     @RequiresApi(Build.VERSION_CODES.Q)
     private inner class MTaskStackListener : TaskStackListener() {
-        override fun onTaskCreated(tId: Int, componentName: ComponentName?) {
-            // Tidak track di sini — onTaskDisplayChanged yang handle
-            // saat task benar-benar masuk ke virtual display kita
-        }
-
+        override fun onTaskCreated(tId: Int, componentName: ComponentName?) {}
         override fun onTaskRemoved(taskId: Int) {
             if (isDestroy) return
             taskList.remove(taskId)
-            // Kalau semua task habis → destroy window
             if (taskList.isEmpty()) {
                 scope.launch(Dispatchers.Main) {
-                    kotlinx.coroutines.delay(500) // delay kecil biar tidak false positive
+                    kotlinx.coroutines.delay(500)
                     if (!isDestroy && taskList.isEmpty()) destroy()
                 }
             }
         }
-
         override fun onTaskRemovalStarted(taskInfo: ActivityManager.RunningTaskInfo) {
             if (isDestroy) return
-            // JANGAN destroy langsung! Hanya remove dari list
-            // Destroy hanya kalau semua task benar-benar habis (handle di onTaskRemoved)
             taskList.remove(taskInfo.taskId)
         }
-
         override fun onTaskDisplayChanged(tId: Int, newDisplayId: Int) {
             if (isDestroy) return
-
-            // Task masuk ke virtual display kita → track
             if (newDisplayId == virtualDisplay.display.displayId) {
                 if (!taskList.contains(tId)) taskList.add(tId)
                 return
             }
-
-            // Task bukan milik kita → abaikan
             if (!taskList.contains(tId)) return
-
-            // Task milik kita pindah ke default display
             if (newDisplayId == Display.DEFAULT_DISPLAY) {
-                // Kalau window sedang floating/minimize → trigger moveToFirst
                 if (isFloating) {
                     context.startService(
                         Intent(context, FreeformService::class.java)
@@ -2423,8 +2417,6 @@ class FreeformView(
                     )
                     return
                 }
-
-                // Window aktif tapi task kabur → paksa balik
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     if (config.useSuiRefuseToFullScreen) {
                         runCatching {
@@ -2441,7 +2433,6 @@ class FreeformView(
                 }
             }
         }
-
         override fun onTaskRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
             var tempRotation = requestedOrientation
             if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
@@ -2450,7 +2441,6 @@ class FreeformView(
                 scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
             }
         }
-
         override fun onActivityRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
             var tempRotation = requestedOrientation
             if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
