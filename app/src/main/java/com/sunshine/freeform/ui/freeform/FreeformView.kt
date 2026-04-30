@@ -633,15 +633,20 @@ class FreeformView(
         initOrientationChangedListener()
         initTextureViewListener()
 
+        // Baca setting tap outside to close
+        val tapOutsideToClose = viewModel.getBooleanSp("tap_outside_to_close", false)
+
         windowLayoutParams.apply {
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM or
+                        if (tapOutsideToClose) WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        else WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                             WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
             format = PixelFormat.RGBA_8888
             windowAnimations = android.R.style.Animation_Dialog
         }
