@@ -239,7 +239,10 @@ class FreeformView(
     private val backgroundGestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (!isFloating) {
-                destroy()
+                // Hanya close kalau setting tap_outside_to_close aktif
+                if (viewModel.getBooleanSp("tap_outside_to_close", false)) {
+                    destroy()
+                }
             }
             return true
         }
