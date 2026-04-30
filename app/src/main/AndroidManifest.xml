@@ -14,7 +14,7 @@
         tools:ignore="QueryAllPackagesPermission" />
     <!-- Phone call permissions -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+    <!--uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
     <!-- Sensor untuk shake to minimize -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Clipboard sync -->
