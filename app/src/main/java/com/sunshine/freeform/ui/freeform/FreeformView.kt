@@ -1844,6 +1844,10 @@ class FreeformView(
         }
     }
 
+     // Anti-spam untuk onTaskDisplayChanged
+    private val TASK_DISPLAY_DEBOUNCE_MS = 1500L
+    private var pendingTaskDisplayJob: kotlinx.coroutines.Job? = null
+
     // Swipe back gesture dengan visual indicator
     private var swipeBackStartX = 0f
     private var swipeBackStartY = 0f
